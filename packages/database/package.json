@@ -1,5 +1,5 @@
 {
-  "name": "@starter/database",
+  "name": "@theairlock/database",
   "version": "0.0.1",
   "private": true,
   "type": "module",

@@ -4,9 +4,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/example/starter-api/internal/config"
-	"github.com/example/starter-api/internal/handlers"
-	"github.com/example/starter-api/internal/middleware"
+	"github.com/theairlock/airlock/apps/api/internal/config"
+	"github.com/theairlock/airlock/apps/api/internal/handlers"
+	"github.com/theairlock/airlock/apps/api/internal/middleware"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/limiter"

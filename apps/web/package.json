@@ -1,25 +1,24 @@
 {
-  "name": "@starter/web",
+  "name": "@theairlock/web",
+  "type": "module",
   "version": "0.0.1",
   "private": true,
-  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
-    "dev": "nuxt dev",
-    "build": "nuxt build",
-    "generate": "nuxt generate",
-    "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
-    "typecheck": "nuxt typecheck"
+    "dev": "astro dev --port 3000",
+    "build": "astro build",
+    "preview": "astro preview --port 3000",
+    "typecheck": "astro check",
+    "astro": "astro"
   },
   "dependencies": {
-    "@starter/core": "workspace:*",
-    "nuxt": "^3.17.0",
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.0"
+    "@theairlock/core": "workspace:*",
+    "astro": "^6.3.8",
+    "astro-sst": "^3.1.4"
   },
   "devDependencies": {
-    "@types/node": "^20.19.0",
-    "typescript": "^5.9.3",
-    "vue-tsc": "^2.1.10"
+    "@astrojs/check": "^0.9.4"
   }
 }

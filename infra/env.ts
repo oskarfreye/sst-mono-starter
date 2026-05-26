@@ -14,7 +14,7 @@ if (
   // eslint-disable-next-line no-console
   console.warn(
     `[infra/env] APP_DOMAIN is still "example.com" while deploying to a protected stage ("${$app.stage}"). ` +
-      `Set the APP_DOMAIN env var before deploying production/stage so custom domains, TLS, and WAF are wired correctly.`,
+      `Set the APP_DOMAIN env var before deploying production/stage so custom domains and TLS are wired correctly.`,
   );
 }
 

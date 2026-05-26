@@ -1,0 +1,43 @@
+---
+import { apiBase, apiUrl } from "../lib/api";
+import { assetsBase } from "../lib/assets";
+
+const healthEndpoint = apiUrl("/v2/health");
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>airlock</title>
+	</head>
+	<body>
+		<main>
+			<h1>airlock</h1>
+			<p>Stage: <span data-stage>…</span></p>
+			<p>API: {apiBase.toString()}</p>
+			<p>Assets: {assetsBase.toString()}</p>
+			<p>Health: <span data-status>loading</span></p>
+		</main>
+
+		<script is:inline define:vars={{ healthEndpoint }}>
+			(async () => {
+				const stageEl = document.querySelector("[data-stage]");
+				const statusEl = document.querySelector("[data-status]");
+				try {
+					const res = await fetch(healthEndpoint);
+					if (!res.ok) throw new Error(`HTTP ${res.status}`);
+					const body = await res.json();
+					if (stageEl) stageEl.textContent = body.stage ?? "";
+					if (statusEl) statusEl.textContent = body.status ?? "";
+				} catch (err) {
+					if (statusEl) statusEl.textContent = "error";
+					console.error("health check failed", err);
+				}
+			})();
+		</script>
+	</body>
+</html>

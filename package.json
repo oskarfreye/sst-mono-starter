@@ -1,5 +1,5 @@
 {
-  "name": "sst-mono-starter",
+  "name": "airlock",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -14,10 +14,10 @@
     "remove": "sst remove",
     "console": "sst console",
     "shell": "sst shell",
-    "web:dev": "bun run --filter @starter/web dev",
-    "web:build": "bun run --filter @starter/web build",
-    "api:build": "bun run --filter @starter/api build",
-    "api:test": "bun run --filter @starter/api test",
+    "web:dev": "bun run --filter @theairlock/web dev",
+    "web:build": "bun run --filter @theairlock/web build",
+    "api:build": "bun run --filter @theairlock/api build",
+    "api:test": "bun run --filter @theairlock/api test",
     "typecheck": "bun run --filter '*' typecheck"
   },
   "devDependencies": {

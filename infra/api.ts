@@ -7,22 +7,10 @@ import { API_DOMAIN, HAS_CUSTOM_DOMAIN } from "./env";
 // Router fronts the API so you can later mount /v1, /v2, streaming handlers
 // on the same domain without introducing a new CloudFront distribution.
 //
-// Hardening (H-I3):
-//  - Custom domain (api.<APP_DOMAIN>) when one is configured. With a custom
-//    domain SST defaults the CloudFront viewer cert to TLSv1.2_2021.
-//  - WAF enabled with the AWS managed Core Rule Set + Known-Bad-Inputs +
-//    SQL-Injection groups (all default-on in SST), plus a per-IP rate-based
-//    rule of 2000 requests / 5 minutes (the SST default — tune as needed).
+// Custom domain (api.<APP_DOMAIN>) is wired when one is configured. With a
+// custom domain SST defaults the CloudFront viewer cert to TLSv1.2_2021.
 export const router = new sst.aws.Router("ApiRouter", {
   ...(HAS_CUSTOM_DOMAIN ? { domain: API_DOMAIN } : {}),
-  waf: {
-    rateLimitPerIp: 2000,
-    managedRules: {
-      coreRuleSet: true,
-      knownBadInputs: true,
-      sqlInjection: true,
-    },
-  },
 });
 
 // Serve the public assets bucket through the Router so we can keep the
@@ -31,7 +19,7 @@ export const router = new sst.aws.Router("ApiRouter", {
 // signed with CloudFront's Origin Access Control under the hood.
 //
 // NOTE(apps/web): the frontend should construct asset URLs as
-// `${NUXT_PUBLIC_API_URL}/cdn/<key>` rather than hitting the bucket domain
+// `${PUBLIC_API_URL}/cdn/<key>` rather than hitting the bucket domain
 // directly.
 router.routeBucket("/cdn", publicAssetsBucket, {
   rewrite: {

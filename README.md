@@ -1,11 +1,11 @@
-# sst-mono-starter
+# airlock
 
-Opinionated SST v3 monorepo starter built on Bun workspaces.
+Opinionated SST v3 monorepo built on Bun workspaces.
 
 Based on the layout of `fr3n-mono`, with:
 - Go/Fiber Lambda API (the `api-v2` pattern), JWT verification via OpenAuth JWKS
 - OpenAuth issuer Lambda (`sst.aws.Auth`)
-- Nuxt 3 frontend
+- Astro frontend
 - Modular `infra/` stacks composed in `sst.config.ts`
 - Shared TS packages under `packages/`
 
@@ -24,7 +24,7 @@ bun run deploy --stage <stage>
 ├── apps/
 │   ├── api/            # Go Fiber Lambda
 │   ├── auth/           # OpenAuth issuer
-│   └── web/            # Nuxt 3
+│   └── web/            # Astro
 ├── packages/
 │   ├── core/           # shared TS
 │   └── database/       # ElectroDB models
@@ -46,8 +46,8 @@ bun run deploy --stage <stage>
 Run a script inside a single workspace:
 
 ```sh
-bun run --filter @starter/web dev
-bun run --filter @starter/api build
+bun run --filter @theairlock/web dev
+bun run --filter @theairlock/api build
 ```
 
 ## Prerequisites

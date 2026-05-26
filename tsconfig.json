@@ -10,5 +10,5 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "exclude": ["node_modules", ".sst", "dist", ".nuxt", ".output"]
+  "exclude": ["node_modules", ".sst", "dist", ".astro", ".output"]
 }

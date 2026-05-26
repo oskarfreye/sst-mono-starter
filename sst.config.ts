@@ -11,7 +11,7 @@ export default $config({
     const stage = input?.stage ?? "";
     const isProtected = protectedStages.includes(stage);
     return {
-      name: "starter",
+      name: "airlock",
       // M-Inf3: retain resources on every protected stage, not just production.
       removal: isProtected ? "retain" : "remove",
       // M-Inf3: SST `protect` blocks `sst remove` against the listed stages.

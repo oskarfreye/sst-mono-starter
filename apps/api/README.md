@@ -1,4 +1,4 @@
-# @starter/api
+# @theairlock/api
 
 Go / Fiber Lambda API. Mirrors the `api-v2` pattern from `fr3n-mono`.
 

@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"github.com/example/starter-api/internal/middleware"
+	"github.com/theairlock/airlock/apps/api/internal/middleware"
 	"github.com/gofiber/fiber/v2"
 )
 

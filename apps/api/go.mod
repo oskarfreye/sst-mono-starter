@@ -1,4 +1,4 @@
-module github.com/example/starter-api
+module github.com/theairlock/airlock/apps/api
 
 go 1.24
 

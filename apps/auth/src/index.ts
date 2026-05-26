@@ -36,7 +36,7 @@ const isDevStage = DEV_STAGES.has(STAGE) || STAGE.startsWith("dev-");
 //   AUTH_CLIENTS="web=https://app.example.com/callback,https://app2.example.com/callback;cli=http://localhost:8080/callback"
 //
 // In dev stages, an implicit `local` client is appended that allows
-// http://localhost:3000 + 127.0.0.1 callbacks for the Nuxt frontend.
+// http://localhost:3000 + 127.0.0.1 callbacks for the Astro frontend.
 interface ClientConfig {
   redirectURIs: string[];
 }

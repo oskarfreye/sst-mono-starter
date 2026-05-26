@@ -13,7 +13,7 @@ sst-env.d.ts
 # builds
 dist/
 .output/
-.nuxt/
+.astro/
 .turbo/
 bootstrap
 apps/api/bootstrap

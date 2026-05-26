@@ -1,4 +1,4 @@
-# @starter/auth
+# @theairlock/auth
 
 OpenAuth issuer Lambda. Stateless Hono app deployed via `sst.aws.Auth`.
 
