@@ -1,0 +1,16 @@
+---
+import type { MissionStatus, SeatStatus } from "../lib/airlock-data";
+
+interface Props {
+  status: MissionStatus | SeatStatus;
+}
+
+const { status } = Astro.props;
+const className = status.toLowerCase().replaceAll("_", "-");
+const label = status.replaceAll("_", " ");
+---
+
+<span class:list={["badge", className]}>
+  <i class="b-dot"></i>
+  {label}
+</span>

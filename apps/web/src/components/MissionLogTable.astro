@@ -1,0 +1,75 @@
+---
+import StatusBadge from "./StatusBadge.astro";
+import {
+  formatDate,
+  missionRows,
+  seatLabel,
+  type MissionRow,
+} from "../lib/airlock-data";
+
+interface Props {
+  rows?: MissionRow[];
+}
+
+const rows = Astro.props.rows ?? missionRows;
+const activeCount = rows.filter((row) => row.status !== "AIRLOCKED").length;
+const vacatedCount = rows.filter((row) => row.status === "AIRLOCKED").length;
+---
+
+<div class="panel log-panel" data-mission-log>
+  <div class="corners"><i></i><i></i></div>
+  <div class="log-tabs" role="tablist" aria-label="Mission log filters">
+    <button class="tab active" type="button" data-tab="active">ACTIVE · <span data-log-count="active">{activeCount}</span></button>
+    <button class="tab" type="button" data-tab="vacated">VACATED · <span data-log-count="vacated">{vacatedCount}</span></button>
+    <button class="tab" type="button" data-tab="all">ALL HISTORY</button>
+    <div class="tab right">SHOWING <span data-log-count="showing">{rows.length}</span> OF <span data-log-count="total">{rows.length}</span> · LIVE</div>
+  </div>
+  <div class="table-scroll">
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th><button class="sort-button" type="button" data-sort-key="seat">SEAT</button></th>
+          <th><button class="sort-button" type="button" data-sort-key="handle">CREW MEMBER</button></th>
+          <th><button class="sort-button" type="button" data-sort-key="mission">CURRENT MISSION</button></th>
+          <th><button class="sort-button" type="button" data-sort-key="deadline">HATCH</button></th>
+          <th><button class="sort-button" type="button" data-sort-key="status">STATUS</button></th>
+        </tr>
+      </thead>
+      <tbody data-mission-log-body>
+        {
+          rows.map((row) => (
+            <tr
+              class:list={{ "is-airlocked": row.status === "AIRLOCKED" }}
+              data-log-status={row.status === "AIRLOCKED" ? "vacated" : "active"}
+              data-href={`/c/${row.handle}`}
+              data-sort-seat={row.seatNumber}
+              data-sort-handle={row.handle}
+              data-sort-mission={row.mission}
+              data-sort-deadline={row.deadlineAt}
+              data-sort-status={row.status}
+            >
+              <td class="seat-number-cell">{seatLabel(row.seatNumber)}</td>
+              <td>
+                <a class="crew" href={`/c/${row.handle}`}>
+                  <canvas class="pixel-avatar" data-avatar="0" width="16" height="16"></canvas>
+                  <span class="crew-meta">
+                    <span class="crew-name">@{row.handle}</span>
+                    <span class="crew-handle">{row.role}</span>
+                  </span>
+                </a>
+              </td>
+              <td><div class="mission-text">{row.mission}</div></td>
+              <td>
+                <div class="deadline">
+                  <span data-countdown={row.deadlineAt}>calculating</span>
+                  <span class="sub">deadline {formatDate(row.deadlineAt)}</span>
+                </div>
+              </td>
+              <td><StatusBadge status={row.status} /></td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

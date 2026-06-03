@@ -1,0 +1,30 @@
+---
+import { events, type EventEntry } from "../lib/airlock-data";
+
+interface Props {
+  entries?: EventEntry[];
+}
+
+const entries = Astro.props.entries ?? events;
+---
+
+<div class="panel feed-panel" data-event-feed>
+  <div class="corners"><i></i><i></i></div>
+  <div class="panel-head">
+    <span>EVENT FEED · LIVE</span>
+    <span class="live"><i class="dot"></i> STREAMING</span>
+  </div>
+  <div class="feed">
+    {
+      entries.map((entry) => (
+        <div class="entry">
+          <span class="ts">{entry.time}</span>
+          <span class:list={["msg", entry.tone ?? ""]}>
+            {entry.icon} <span class="who">{entry.handle}</span> {entry.event}
+          </span>
+          <span class="tag">{entry.tag}</span>
+        </div>
+      ))
+    }
+  </div>
+</div>

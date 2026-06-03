@@ -1,0 +1,42 @@
+---
+import { metrics, pricingTiers, type PriceTier } from "../lib/airlock-data";
+
+interface Props {
+  tiers?: PriceTier[];
+}
+
+const tiers = Astro.props.tiers ?? pricingTiers;
+const totalFilled = tiers.reduce((sum, tier) => sum + tier.filled, 0);
+const totalSeats = tiers.reduce((sum, tier) => sum + tier.seats, 0);
+---
+
+<div class="panel price-ladder" data-price-ladder>
+  <div class="corners"><i></i><i></i></div>
+  <div class="panel-head">
+    <span>PRICE LADDER · LIVE</span>
+    <span class="mono"><span data-ladder-total-filled>{totalFilled}</span> / <span data-ladder-total-seats>{totalSeats}</span> · THE 100</span>
+  </div>
+  <div class="ladder-list">
+    {
+      tiers.map((tier) => {
+        const percent = Math.round((tier.filled / tier.seats) * 100);
+        return (
+          <div class="ladder-row" data-ladder-tier={tier.id}>
+            <div class="ladder-meta">
+              <span>TIER {tier.id} · <span data-ladder-price>${tier.price}</span></span>
+              <span><span data-ladder-filled>{tier.filled}</span> / <span data-ladder-capacity>{tier.seats}</span></span>
+              <span>SEATS <span data-ladder-range>{tier.range}</span></span>
+            </div>
+            <div class="ladder-bar" aria-label={`Tier ${tier.id} ${tier.filled} of ${tier.seats} filled`}>
+              <i style={`width:${percent}%`} data-ladder-bar></i>
+            </div>
+          </div>
+        );
+      })
+    }
+  </div>
+  <div class="ladder-foot">
+    <span>▸ NEXT BUMP IN <strong data-state-field="seatsUntilNextTier">{metrics.seatsUntilNextTier}</strong> SEATS · TIER <span data-state-field="nextTier">02</span> OPENS AT $<span data-state-field="nextTierPrice">{metrics.nextTierPrice}</span></span>
+    <span>▸ AFTER SEAT 100: PRICE FLATTENS AT $336 · THE 100 CLOSES FOREVER</span>
+  </div>
+</div>

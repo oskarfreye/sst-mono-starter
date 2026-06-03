@@ -1,0 +1,102 @@
+---
+interface AirlockEvent {
+  event_id: string;
+  kind: string;
+  handle: string;
+  seat_label: string;
+  cohort: "THE_100" | "POST_100";
+  mission?: string;
+  occurred_at: string;
+  message: string;
+  wake_posted?: boolean;
+}
+
+interface StateSnapshot {
+  airlock_events?: AirlockEvent[];
+}
+
+const wakeEntries = await loadWakeEntries(Astro.url);
+
+async function loadWakeEntries(url: URL): Promise<AirlockEvent[]> {
+  try {
+    const response = await fetch(new URL("/api/state", url), {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return [];
+    const state = (await response.json()) as StateSnapshot;
+    return [...(state.airlock_events ?? [])].sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+  } catch {
+    return [];
+  }
+}
+
+function formatWakeTime(iso: string): string {
+  return new Intl.DateTimeFormat("en", {
+    timeZone: "UTC",
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(new Date(iso))
+    .replace(",", "");
+}
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>The Wake · The Airlock</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="page-shell">
+    <nav class="page-nav mono">
+      <a href="/">THE AIRLOCK</a>
+      <a href="/c/oskar">@OSKAR</a>
+      <a href="/manifest">SIGN THE MANIFEST</a>
+    </nav>
+
+    <header class="page-hero">
+      <div class="label"><span class="n">THE WAKE</span> PUBLIC AIRLOCK LOG</div>
+      <h1>Every hatch that opens stays here.</h1>
+      <p>Public log of every airlock event since boarding began.</p>
+    </header>
+
+    <div class="wake-filters mono" aria-label="Wake filters">
+      <button type="button" data-wake-filter="THE_100" aria-pressed="false">THE 100 ONLY</button>
+      <button type="button" data-wake-filter="POST_100" aria-pressed="false">POST-100</button>
+      <button class="active" type="button" data-wake-filter="ALL" aria-pressed="true">ALL</button>
+    </div>
+
+    {
+      wakeEntries.length > 0 ? (
+        <section class="wake-stream">
+          {wakeEntries.map((entry) => (
+            <article class="wake-entry" id={entry.event_id} data-cohort={entry.cohort}>
+              <time>{formatWakeTime(entry.occurred_at)} UTC</time>
+              <h2>@{entry.handle} · {entry.cohort === "THE_100" ? "THE 100 · " : ""}SEAT {entry.seat_label} · AIRLOCKED</h2>
+              <p>Died on: "{entry.mission || entry.message}"</p>
+              <p>Proof failed the hatch. The seat is vacated and the stamp stays here.{entry.wake_posted ? " THE WAKE stack posted this entry." : ""}</p>
+              <a href={`/c/${entry.handle}`}>link to profile</a>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <section class="empty-state empty-state--panel">
+          <div class="label"><span class="n">00</span> AIRLOCK EVENTS</div>
+          <h2>No one has missed the hatch yet.</h2>
+          <p>The Wake is empty because launch data is honest. Seat 01 is declared. Every other seat is open.</p>
+        </section>
+      )
+    }
+  </main>
+
+  <script is:inline src="/wake.js" defer></script>
+</body>
+</html>

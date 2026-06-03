@@ -1,0 +1,19 @@
+---
+interface Props {
+  name: string;
+  meta: string;
+  href: string;
+}
+
+const { name, meta, href } = Astro.props;
+---
+
+<a class="receipt-card" href={href} target="_blank" rel="noreferrer">
+  <span class="receipt-thumb" aria-hidden="true">
+    <i></i><i></i><i></i>
+  </span>
+  <span>
+    <strong>{name}</strong>
+    <small>{meta}</small>
+  </span>
+</a>

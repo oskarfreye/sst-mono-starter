@@ -1,0 +1,323 @@
+---
+import { __experimental_CheckoutButton as CheckoutButton } from "@clerk/astro/components";
+import { metrics, pricingTiers } from "../lib/airlock-data";
+import { clerkSessionToken } from "../lib/auth";
+
+interface ManifestState {
+  next_seat?: {
+    seat_number?: number;
+    seat_label?: string;
+    price?: {
+      cents?: number;
+      display?: string;
+    };
+  };
+  metrics?: {
+    seats_open?: number;
+  };
+}
+
+interface BoarderState {
+  has_seat: boolean;
+  profile?: {
+    handle?: string;
+    display_name?: string;
+    profile_path?: string;
+  };
+}
+
+const session = Astro.locals.auth();
+const isAuthenticated = session.isAuthenticated;
+// Clerk's default session token carries the (unspoofable) billing claims; the
+// `boarding` feature is attached to the paid "Boarder" plan in the Clerk
+// dashboard. Branch the boarding UI on entitlement state.
+const hasBoardingFeature = isAuthenticated && session.has({ feature: "boarding" });
+
+const liveState = await loadManifestState(Astro.url);
+const nextSeatNumber = liveState?.next_seat?.seat_number ?? metrics.nextSeat;
+const nextSeatLabel = liveState?.next_seat?.seat_label ?? String(nextSeatNumber).padStart(2, "0");
+const nextSeatPrice = liveState?.next_seat?.price?.display ?? `$${metrics.nextSeatPrice}`;
+const clerkPublishableKey = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY ?? import.meta.env.CLERK_PUBLISHABLE_KEY ?? "";
+// Active tier is driven by the SEAT COUNTER (next seat), not by counting Clerk
+// sales. Mirror the Go price ladder (state_snapshot.go priceTiers) and clamp
+// post-100 to 4 — price_tiers omits the "∞" tier and next_seat.price already
+// carries the flat $336 for post-100, which is the tier-04 price.
+const activeTierIndex = nextSeatNumber <= 10 ? 1 : nextSeatNumber <= 25 ? 2 : nextSeatNumber <= 50 ? 3 : 4;
+const isLiveClerk = clerkPublishableKey.startsWith("pk_live_");
+// Clerk plan IDs (cplan_...) for tier-01..tier-04, resolved per instance after
+// `clerk config patch --file infra/clerk/billing.json`. planId is a Clerk plan
+// ID, NOT the slug. Slug<->cents truth lives in the Go API; this maps the
+// seat-counter-derived active tier to its checkout target.
+const tierPlanIds: Record<number, string> = isLiveClerk
+  ? { 1: "REPLACE_LIVE_TIER01", 2: "REPLACE_LIVE_TIER02", 3: "REPLACE_LIVE_TIER03", 4: "REPLACE_LIVE_TIER04" }
+  : {
+      1: "cplan_3EdIz1QYqDZVjupEq8tbcgxG8f9",
+      2: "cplan_3EdIz5xRWd0VXCO8QXk6FnYP4uH",
+      3: "cplan_3EdIz19NrNZ0Q3rXZI92oapBIcm",
+      4: "cplan_3EdIz2mdgIwIMWclrW03RNI31DG",
+    };
+const activeTierPlanId = tierPlanIds[activeTierIndex];
+const isCheckoutConfigured = activeTierPlanId?.startsWith("cplan_") ?? false;
+const claimedSeatCount = Math.max(0, nextSeatNumber - 1);
+const manifestSeatLadder = pricingTiers.map((tier) => {
+  const [rangeStart, rangeEnd] = tier.range.split("-").map(Number);
+  const capacity = Number.isFinite(rangeStart) && Number.isFinite(rangeEnd)
+    ? rangeEnd - rangeStart + 1
+    : tier.seats;
+  const claimed = Number.isFinite(rangeStart)
+    ? Math.min(Math.max(claimedSeatCount - rangeStart + 1, 0), capacity)
+    : tier.filled;
+  const left = Math.max(capacity - claimed, 0);
+  const isPast = Number.isFinite(rangeEnd) && nextSeatNumber > rangeEnd;
+  const isCurrent = Number.isFinite(rangeStart) && Number.isFinite(rangeEnd) && nextSeatNumber >= rangeStart && nextSeatNumber <= rangeEnd;
+  const state = isPast ? "past" : isCurrent ? "current" : "future";
+  const status = isPast ? "Closed" : isCurrent ? `${left} ${left === 1 ? "spot" : "spots"} left` : `$${tier.price}`;
+  const detail = isCurrent ? `Seat ${nextSeatLabel} boarding` : `Seats ${tier.range}`;
+  return { ...tier, state, status, detail };
+});
+
+// Only the entitled-but-unseated and already-seated branches need the boarder
+// record; skip the upstream call entirely otherwise.
+const boarder = hasBoardingFeature ? await loadBoarderState() : null;
+const hasSeat = boarder?.has_seat ?? false;
+const dashboardPath = "/dashboard";
+const profilePath = boarder?.profile?.profile_path ?? dashboardPath;
+
+let prefillDisplayName = "";
+if (hasBoardingFeature && !hasSeat) {
+  prefillDisplayName = boarder?.profile?.display_name ?? (await clerkDisplayName());
+}
+
+async function loadManifestState(url: URL): Promise<ManifestState | null> {
+  try {
+    const response = await fetch(new URL("/api/state", url), {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as ManifestState;
+  } catch {
+    return null;
+  }
+}
+
+async function loadBoarderState(): Promise<BoarderState | null> {
+  const token = await clerkSessionToken(Astro);
+  const rawBase = import.meta.env.PUBLIC_API_URL;
+  if (!token || typeof rawBase !== "string" || rawBase.trim() === "") {
+    return null;
+  }
+  try {
+    const response = await fetch(new URL("/api/me/airlock", rawBase), {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as BoarderState;
+  } catch {
+    return null;
+  }
+}
+
+async function clerkDisplayName(): Promise<string> {
+  try {
+    const user = await Astro.locals.currentUser();
+    if (!user) return "";
+    return user.fullName ?? user.firstName ?? user.username ?? "";
+  } catch {
+    return "";
+  }
+}
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sign the Manifest · The Airlock</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="page-shell">
+    <nav class="page-nav mono">
+      <a href="/">THE AIRLOCK</a>
+      <a href="/c/oskar">@OSKAR</a>
+      <a href="/airlock">THE WAKE</a>
+    </nav>
+
+    <header class="page-hero manifest-hero">
+      <div class="manifest-hero-copy">
+        <div class="label"><span class="n">MANIFEST</span> CURRENT BOARDING PRICE</div>
+        {
+          hasSeat ? (
+            <>
+              <h1>You hold a seat. Welcome aboard.</h1>
+              <p>Your manifest signature is on the board. Head to mission control to declare.</p>
+            </>
+          ) : hasBoardingFeature ? (
+            <>
+              <h1>Sign the manifest. Take seat {nextSeatLabel}.</h1>
+              <p>Choose the handle that goes on the public roster, then claim your seat.</p>
+            </>
+          ) : isAuthenticated ? (
+            <>
+              <h1>Join now for {nextSeatPrice}.</h1>
+              <p>Seat {nextSeatLabel} is next on the pad. Boarder claims it at the current price; Ground Support can watch the launches for free.</p>
+            </>
+          ) : (
+            <>
+              <h1>Join now for {nextSeatPrice}.</h1>
+              <p>Authenticate first, then board seat {nextSeatLabel} at the current price or watch from Ground Support.</p>
+            </>
+          )
+        }
+      </div>
+      <div class="manifest-launchpad" aria-hidden="true">
+        <div class="launchpad-grade">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="launch-service-frame">
+          <span class="service-deck service-deck--top"></span>
+          <span class="service-deck service-deck--mid"></span>
+          <span class="service-arm service-arm--upper"></span>
+          <span class="service-arm service-arm--lower"></span>
+          <span class="service-brace service-brace--one"></span>
+          <span class="service-brace service-brace--two"></span>
+          <span class="service-light service-light--green"></span>
+          <span class="service-light service-light--amber"></span>
+        </div>
+        <canvas class="manifest-cruiser-canvas" data-manifest-cruiser width="300" height="540"></canvas>
+      </div>
+    </header>
+
+    {
+      !isAuthenticated ? (
+        <section class="empty-state empty-state--panel">
+          <div class="label"><span class="n">01</span> AUTHENTICATE</div>
+          <h2>Sign in to join.</h2>
+          <p>The manifest is private. Verify your hatch key, then return to board seat {nextSeatLabel} for {nextSeatPrice}.</p>
+          <a class="cta" href={`/auth/login?return_to=${encodeURIComponent("/manifest")}`}>AUTHENTICATE · HATCH KEY</a>
+        </section>
+      ) : hasSeat ? (
+        <section class="empty-state empty-state--panel">
+          <div class="label"><span class="n">SEATED</span> BOARDING COMPLETE</div>
+          <h2>Your seat is assigned.</h2>
+          <p>Return to mission control to declare the next hatch and keep the pressure visible.</p>
+          <a class="cta" href={dashboardPath}>GO TO DASHBOARD</a>
+          <p class="form-status mono"><a href={profilePath}>VIEW PUBLIC PROFILE</a></p>
+        </section>
+      ) : hasBoardingFeature ? (
+        <section class="manifest-flow manifest-flow--checkout">
+          <article class="flow-step">
+            <span>01</span>
+            <h2>Authenticate</h2>
+            <p>Verified. Hatch key accepted.</p>
+          </article>
+          <article class="flow-step is-current">
+            <span>02</span>
+            <h2>Claim seat {nextSeatLabel}</h2>
+            <form class="mission-form mission-form--stacked" data-board-form action="/api/boarding/board" method="post">
+              <label for="handle">PUBLIC HANDLE</label>
+              <input id="handle" name="handle" autocomplete="username" pattern="[a-z0-9][a-z0-9_-]{1,30}[a-z0-9]" placeholder="yourhandle" required />
+              <label for="display_name">DISPLAY NAME</label>
+              <input id="display_name" name="display_name" autocomplete="name" placeholder="Your Name" value={prefillDisplayName} />
+              <button type="submit">CLAIM SEAT {nextSeatLabel}</button>
+              <p class="form-status mono" data-board-status>SEAT ASSIGNS IMMEDIATELY · BILLING HANDLED BY YOUR PLAN</p>
+            </form>
+          </article>
+          <article class="flow-step">
+            <span>03</span>
+            <h2>Declare</h2>
+            <p>Return to mission control and put a 30-day promise on the board.</p>
+          </article>
+        </section>
+      ) : (
+        <section class="manifest-join">
+          <div class="ground-support-badge mono">
+            <span class="dot"></span>
+            <strong>GROUND SUPPORT ACTIVE</strong>
+            <span>Email updates enabled</span>
+          </div>
+          <div class="join-now-card">
+            <div class="label"><span class="n">02</span> BOARDER · CURRENT PRICE</div>
+            <h2>Board seat {nextSeatLabel} for {nextSeatPrice}.</h2>
+            <p>Join now at the current seat price. Checkout unlocks the manifest flow, then seat {nextSeatLabel} is claimed from the pad.</p>
+            {
+              isCheckoutConfigured ? (
+                <CheckoutButton
+                  asChild
+                  planId={activeTierPlanId}
+                  planPeriod="month"
+                  for="user"
+                  newSubscriptionRedirectUrl="/manifest?subscribed=1"
+                >
+                  <button class="manifest-buy-button" type="button">JOIN FOR {nextSeatPrice}</button>
+                </CheckoutButton>
+              ) : (
+                <button class="manifest-buy-button" type="button" disabled>CHECKOUT UNAVAILABLE</button>
+              )
+            }
+            <div class="manifest-seat-ladder mono" aria-label="Boarding ladder">
+              <div class="manifest-seat-track" aria-hidden="true">
+                {manifestSeatLadder.map((tier) => <span class={`manifest-seat-node is-${tier.state}`}></span>)}
+              </div>
+              <div class="manifest-seat-steps">
+                {
+                  manifestSeatLadder.map((tier) => (
+                    <div class={`manifest-seat-step is-${tier.state}`}>
+                      <strong>Tier {tier.id}</strong>
+                      <span>{tier.status}</span>
+                      <small>{tier.detail}</small>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+            <p class="join-micro mono">ONE-TIME BOARDING PASS · GROUND SUPPORT STAYS FREE IN THE BACKGROUND</p>
+          </div>
+        </section>
+      )
+    }
+  </main>
+
+  <script is:inline src="/airlock-cruiser.js"></script>
+  <script is:inline src="/manifest-ship.js"></script>
+  <script>
+    // Progressive enhancement: submit the boarding form as JSON and, on success,
+    // route to the dashboard. The route also accepts a plain form POST, so the
+    // flow still works with JS disabled.
+    const form = document.querySelector<HTMLFormElement>("[data-board-form]");
+    const status = document.querySelector<HTMLParagraphElement>("[data-board-status]");
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submit = form.querySelector<HTMLButtonElement>("button[type=submit]");
+      if (submit) submit.disabled = true;
+      if (status) status.textContent = "CLAIMING SEAT…";
+      const data = new FormData(form);
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({
+            handle: (data.get("handle") ?? "").toString(),
+            display_name: (data.get("display_name") ?? "").toString(),
+          }),
+        });
+        if (response.ok) {
+          window.location.assign("/dashboard");
+          return;
+        }
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (status) status.textContent = (payload.error ?? "Could not claim seat. Try again.").toUpperCase();
+      } catch {
+        if (status) status.textContent = "NETWORK ERROR. TRY AGAIN.";
+      } finally {
+        if (submit) submit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,43 +1,450 @@
 ---
-import { apiBase, apiUrl } from "../lib/api";
-import { assetsBase } from "../lib/assets";
+import EventFeed from "../components/EventFeed.astro";
+import MissionLogTable from "../components/MissionLogTable.astro";
+import PriceLadder from "../components/PriceLadder.astro";
+import ProductReceiptCard from "../components/ProductReceiptCard.astro";
+import SeatGrid from "../components/SeatGrid.astro";
+import {
+  currentMission,
+  metrics,
+  missionRows,
+  pricingTiers,
+  receipts,
+  seats,
+} from "../lib/airlock-data";
 
-const healthEndpoint = apiUrl("/v2/health");
+const stateEndpoint = "/api/state";
+const eventsEndpoint = "/api/events";
 ---
 
+<!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>airlock</title>
-	</head>
-	<body>
-		<main>
-			<h1>airlock</h1>
-			<p>Stage: <span data-stage>…</span></p>
-			<p>API: {apiBase.toString()}</p>
-			<p>Assets: {assetsBase.toString()}</p>
-			<p>Health: <span data-status>loading</span></p>
-		</main>
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="generator" content={Astro.generator} />
+  <meta name="description" content="Ship one app in 30 days with a working buy button. Miss the hatch and your handle goes on the public airlock log forever." />
+  <title>The Airlock — No passengers. Only builders.</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body data-screen-label="01 Airlock Landing" data-state-endpoint={stateEndpoint} data-events-endpoint={eventsEndpoint}>
 
-		<script is:inline define:vars={{ healthEndpoint }}>
-			(async () => {
-				const stageEl = document.querySelector("[data-stage]");
-				const statusEl = document.querySelector("[data-status]");
-				try {
-					const res = await fetch(healthEndpoint);
-					if (!res.ok) throw new Error(`HTTP ${res.status}`);
-					const body = await res.json();
-					if (stageEl) stageEl.textContent = body.stage ?? "";
-					if (statusEl) statusEl.textContent = body.status ?? "";
-				} catch (err) {
-					if (statusEl) statusEl.textContent = "error";
-					console.error("health check failed", err);
-				}
-			})();
-		</script>
-	</body>
+<div class="top-hud">
+  <div class="brand">
+    <div class="brand-mark"></div>
+    <span class="brand-word">THE AIRLOCK</span>
+    <span class="brand-version">v1.0</span>
+  </div>
+  <div class="right">
+    <span class="status-pill"><span class="dot"></span> SHIP NOMINAL</span>
+    <a href="/manifest" class="btn btn-primary btn-sm">Sign the Manifest · $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span> <span class="arrow">→</span></a>
+  </div>
+</div>
+
+<section class="cinematic-stage" id="cinematic" data-screen-label="01 Hero">
+  <div class="cinematic-pin">
+    <canvas id="cinematic-canvas" width="480" height="270"></canvas>
+
+    <div class="hero-typeset">
+      <div class="hero-title-stack">
+        <h1 class="hero-title-main">LAUNCH</h1>
+        <div class="hero-alt-slot"><h1 class="hero-title-alt">OR AIRLOCK</h1></div>
+        <div class="hero-sub-slot">
+          <p class="hero-sub-default">your app in 30 days</p>
+          <p class="hero-sub-alt">miss the deadline, get kicked out forever.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="scroll-prompt">
+      <span class="prompt-hand">↓</span>
+      <span class="prompt-text">scroll to start</span>
+    </div>
+  </div>
+</section>
+
+<div class="post-cinematic" id="after-cinematic">
+  <div class="starfield">
+    <div class="stars"></div>
+    <div class="grid-overlay"></div>
+  </div>
+
+  <section class="mirror-section" data-reveal>
+    <div class="mirror-copy">
+      <p>"I'm two weeks away."</p>
+      <p>You said that two weeks ago. And eight weeks before that.</p>
+      <p>247 commits. Zero users. Stripe still in test mode. The waitlist page is in its sixth Figma. The launch date is a calendar event that keeps getting dragged into next month.</p>
+      <p>"After auth."  "After the redesign."  "After the AI feature is in."</p>
+      <p>Here's the bill. Every month it isn't live is a month it earns nothing, proves nothing, and teaches you nothing a paying stranger would. An unshipped app is worth exactly zero — and it stays worth zero until the hatch opens.</p>
+      <p>Polishing in private isn't shipping. Twitter threads about your stack aren't shipping. Pushing to <code>main</code> of a domain nobody knows isn't shipping.</p>
+      <p>You don't need another month.<br />You need a public hatch and a date you can't move.</p>
+    </div>
+  </section>
+
+  <section class="wrap anchor-section" data-reveal>
+    <div class="anchor-row">
+      <div class="anchor-copy">
+        <div class="section-head section-head--tight">
+          <div class="label">
+            <span class="n">▲</span> PUBLIC ACCOUNTABILITY · BOARDING PROTOCOL
+          </div>
+        </div>
+        <h1>No passengers.<br/><em>Only builders.</em></h1>
+        <p>The outcome is simple: in 30 days you have a live app that takes money. The method is the part nobody else will sell you — a numbered seat, a declared mission, and a hatch that closes whether you're ready or not. When someone misses, the page records it under their real handle, forever. That isn't the threat. That's the mechanism that makes you finish.</p>
+        <div class="cta-row">
+          <a href="/manifest" class="btn btn-primary">Sign the Manifest · $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span> <span class="arrow">→</span></a>
+          <a href="#log" class="btn btn-ghost">See the Mission Log</a>
+        </div>
+      </div>
+
+      <div class="panel live-100-panel">
+        <div class="corners"><i></i><i></i></div>
+        <div class="panel-head">
+          <span>THE 100 · LIVE</span>
+          <span class="live"><i class="dot"></i> LIVE</span>
+        </div>
+        <div class="live-100-body">
+          <div class="live-100-grid-row">
+            <SeatGrid seats={seats} size="compact" showLegend={false} />
+            <div class="live-counts mono">
+              <span><i class="legend-box occupied"></i> OCCUPIED <strong data-state-field="occupied">{metrics.occupied}</strong></span>
+              <span><i class="legend-box vacated"></i> VACATED <strong data-state-field="vacated">{metrics.vacated}</strong></span>
+              <span><i class="legend-box open"></i> OPEN <strong data-state-field="open">{metrics.open}</strong></span>
+            </div>
+          </div>
+          <div class="panel-rule"></div>
+          <div class="nearest-hatch mono">
+            <span>NEAREST HATCH IN FLEET</span>
+            <strong data-nearest-hatch>@{currentMission.handle} · SEAT 01 · <span data-countdown={currentMission.deadlineAt}>calculating</span> until airlock</strong>
+          </div>
+          <div class="panel-rule"></div>
+          <div class="next-seat-callout">
+            <span class="mono">NEXT SEAT · $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span> · TIER 01</span>
+            <a href="/manifest" class="btn btn-primary btn-sm">SIGN THE MANIFEST <span class="arrow">→</span></a>
+          </div>
+        </div>
+        <div class="hatch-foot">
+          <span><span class="blink">●</span> NO HEROES, NO HIDING</span>
+          <span>UTC</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section" id="how" data-reveal data-stagger>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 01 ]</span> THE 30 DAYS</div>
+        <h2>Declare one app. Ship it in 30 days. <em>Or face the airlock.</em></h2>
+      </div>
+      <div class="right">Four steps. One rule. No new work to learn — Airlock doesn't add tasks, it removes the option to not finish. The clock doesn't extend, the mission doesn't change, the floor doesn't soften.</div>
+    </div>
+    <div class="steps">
+      <div class="step" data-stagger-child>
+        <canvas class="pixel-sprite" data-sprite="board" width="32" height="32"></canvas>
+        <div class="n">STEP 01 · BOARD</div>
+        <h3>Sign the manifest.</h3>
+        <p>Pay the next-seat price. A public profile goes live at <code>theairlock.space/c/[you]</code>. Pick your optional stacks if you want extra rope. The 30-day clock starts the moment you declare your mission.</p>
+      </div>
+      <div class="step" data-stagger-child>
+        <canvas class="pixel-sprite" data-sprite="declare" width="32" height="32"></canvas>
+        <div class="n">STEP 02 · DECLARE</div>
+        <h3>One app. One URL. One sentence.</h3>
+        <p>A new app, or a customer-facing release of an existing one. Has to be live within 30 days. Has to take money. "Refactor the backend" doesn't. "Ship Stripe checkout on v1.beta" does.</p>
+      </div>
+      <div class="step" data-stagger-child>
+        <canvas class="pixel-sprite" data-sprite="ship" width="32" height="32"></canvas>
+        <div class="n">STEP 03 · SHIP</div>
+        <h3>Drop the URL before the hatch.</h3>
+        <p>The crew clicks it. They reach a working sign-up. They reach a way to pay. That's the whole bar: a stranger could give you a dollar without asking you a single question. Hit it and you've shipped. Proof beats intention.</p>
+      </div>
+      <div class="step fail" data-stagger-child>
+        <canvas class="pixel-sprite" data-sprite="airlock" width="32" height="32"></canvas>
+        <div class="n">STEP 04 · OR</div>
+        <h3>The hatch doesn't argue.</h3>
+        <p>Miss the deadline and you're airlocked. Profile marked. Seat lost. To come back, you buy a new boarding pass at full price ($336).</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section" id="protocol" data-reveal data-stagger>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 02 ]</span> AIRLOCK PROTOCOL</div>
+        <h2>When you miss, two things happen. <em>Every time.</em></h2>
+      </div>
+      <div class="right">This page is the product. Every exit a builder reaches for — "next month," "after the redesign," "nobody's watching anyway" — the protocol closes. The floor is automatic. The stacks are extra pressure you bolt on yourself, at board, when you already know you'll need more rope.</div>
+    </div>
+    <div class="protocol-split">
+      <div>
+        <div class="sub-label">THE FLOOR · MANDATORY</div>
+        <div class="protocol-grid protocol-grid--floor">
+          <div class="protocol-card" data-stagger-child>
+            <div class="code">F · 01 · MARKED</div>
+            <h4>Profile marked AIRLOCKED.</h4>
+            <p>Your public profile gets a permanent <code>AIRLOCKED · [mission] · [date]</code> stamp. Future cycles can stack proof above it; nothing erases it.</p>
+          </div>
+          <div class="protocol-card" data-stagger-child>
+            <div class="code">F · 02 · GROUNDED</div>
+            <h4>Seat forfeit. Re-board costs $336.</h4>
+            <p>You're off the boat. You return as a new seat number. Your original seat is vacated forever, marked with your name on the public grid.</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="sub-label">OPTIONAL STACKS · PICKED AT BOARD</div>
+        <div class="protocol-grid protocol-grid--stacks">
+          <div class="protocol-card" data-stagger-child>
+            <div class="code">S · 01 · CREW ALERT</div>
+            <h4>Up to 8 named people.</h4>
+            <p>Cofounder, partner, ex-boss, group chat. They get a direct push the moment your hatch closes on a miss.</p>
+          </div>
+          <div class="protocol-card" data-stagger-child>
+            <div class="code">S · 02 · THE WAKE</div>
+            <h4>Probably the only one that actually works.</h4>
+            <p>A short automatic post on <code>theairlock.space/airlock</code> announcing your miss: handle, mission, date.</p>
+          </div>
+          <div class="protocol-card is-muted" data-stagger-child>
+            <div class="code">S · 03 · DONATION PENALTY · v1.1</div>
+            <h4>Coming in v1.1.</h4>
+            <p>Auto-charge a pre-set amount to a charity, or an anti-charity, you'd rather not fund. Card-on-file work is deferred.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="reentry-note">There's a way back, and it's earned, not bought. After you re-board, opt into the re-entry challenge: ship two missions in a row and every prior AIRLOCKED stamp gets a <code>[REDEEMED]</code> tag. The failure stays on the record; the comeback gets witnessed next to it. Nobody erases your history here — you out-ship it.</p>
+  </section>
+
+  <section class="wrap section" id="log" data-reveal>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 03 ]</span> MISSION LOG</div>
+        <h2>Every seat. Every mission. <em>Every airlock. Public.</em></h2>
+      </div>
+      <div class="right">Proof you can audit before you pay a cent. A read-only window into what THE 100 is shipping right now — no filters, no PR; current missions, live hatch countdowns, and every seat that's been vacated.</div>
+    </div>
+    <MissionLogTable rows={missionRows} />
+  </section>
+
+  <section class="wrap section" id="cabin" data-reveal>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 04 ]</span> THE CABIN</div>
+        <h2>Small room. <em>Numbered seats. Empty chairs.</em></h2>
+      </div>
+      <div class="right">The 100 has 100 seats and never more. When a seat vacates, it stays vacated forever — the room only ever gets smaller. This is the one scarcity you can't manufacture later: the price climbs with every seat taken, and the original cohort seals at 100.</div>
+    </div>
+    <SeatGrid seats={seats} size="large" />
+    <p class="cabin-note">Active boarders → <span data-state-field="occupied">{metrics.occupied}</span>. Vacated → <span data-state-field="vacated">{metrics.vacated}</span>. Open seats → <span data-state-field="open">{metrics.open}</span>. After seat 100 is sealed, new boarders fill seats 101+ at $336; they don't enter this grid.</p>
+  </section>
+
+  <section class="wrap section" id="shipped" data-reveal data-stagger>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 05 ]</span> WHAT GETS SHIPPED</div>
+        <h2>The mission is yours. <em>The proof is non-negotiable.</em></h2>
+      </div>
+      <div class="right">Pick the outcome that fits where you are. Four archetypes, one rule the Airlock never bends: it ships with a working buy button. The dream is yours; the buy button is the receipt.</div>
+    </div>
+    <div class="cases mission-types">
+      <div class="case" data-stagger-child>
+        <div class="who-label">MISSION TYPE 01 · NEW SaaS</div>
+        <div class="quote">"Ship a new SaaS. v1, Stripe live, first dollar earned."</div>
+        <div class="proof"><span class="k">PROOF</span><span class="v">deployed URL + Stripe checkout reachable</span></div>
+      </div>
+      <div class="case" data-stagger-child>
+        <div class="who-label">MISSION TYPE 02 · NEW AI TOOL</div>
+        <div class="quote">"Ship a new AI tool or wrapper. Paid signup or paid waitlist mandatory."</div>
+        <div class="proof"><span class="k">PROOF</span><span class="v">deployed URL + paid waitlist or live checkout</span></div>
+      </div>
+      <div class="case" data-stagger-child>
+        <div class="who-label">MISSION TYPE 03 · MAJOR RELEASE</div>
+        <div class="quote">"Ship a customer-facing release behind a paywall on an existing product."</div>
+        <div class="proof"><span class="k">PROOF</span><span class="v">deployed feature + paywall behavior verified</span></div>
+      </div>
+      <div class="case" data-stagger-child>
+        <div class="who-label">MISSION TYPE 04 · SMALL BET</div>
+        <div class="quote">"Ship one feature with one buy button. Validate before you build."</div>
+        <div class="proof"><span class="k">PROOF</span><span class="v">deployed URL + payment flow</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section" id="telemetry" data-reveal>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 06 ]</span> SHIP TELEMETRY</div>
+        <h2>The crew never sleeps. <em>The log never stops scrolling.</em></h2>
+      </div>
+      <div class="right">Receipts in real time. Every boarding, every launch, every airlock; broadcast across the ship the moment it happens. Nothing here is a testimonial you have to take on faith.</div>
+    </div>
+    <div class="feed-row">
+      <EventFeed />
+      <div class="panel metrics-panel">
+        <div class="corners"><i></i><i></i></div>
+        <div class="panel-head">
+          <span>FLEET METRICS · LIVE</span>
+          <span class="mono">UPDATED 18:00 UTC</span>
+        </div>
+        <div class="metrics-grid">
+          <div class="metric"><div class="k">SEATS OCCUPIED</div><div class="v ice"><span data-state-field="occupied">{metrics.occupied}</span> / 100</div></div>
+          <div class="metric"><div class="k">SEATS VACATED</div><div class="v amber" data-state-field="vacated">{metrics.vacated}</div></div>
+          <div class="metric"><div class="k">LAUNCHES CONFIRMED</div><div class="v green" data-state-field="confirmedThisWeek">{metrics.confirmedThisWeek}</div><div class="delta">this week / <span data-state-field="confirmedLifetime">{metrics.confirmedLifetime}</span> lifetime</div></div>
+          <div class="metric"><div class="k">NEXT TIER OPENS</div><div class="v">$<span data-state-field="nextTierPrice">{metrics.nextTierPrice}</span></div><div class="delta">in <span data-state-field="seatsUntilNextTier">{metrics.seatsUntilNextTier}</span> seats</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section" id="join" data-reveal>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 07 ]</span> BOARDING PASS</div>
+        <h2>Sign the manifest. Take your seat. <em>Start the clock.</em></h2>
+      </div>
+      <div class="right">One price, paid once, for a seat that never expires. $42 opens the boat today. Every tier doubles the last, so the cheapest this is ever going to be is right now. Ship and it's yours for life. Die on a mission and the only way back is $336 — the same price every latecomer pays, forever.</div>
+    </div>
+    <div class="boarding-row">
+      <div class="panel boarding-card">
+        <div class="corners"><i></i><i></i></div>
+        <div class="panel-head"><span>NEXT SEAT · $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span></span><span>SEAT <span data-state-field="nextSeat">{metrics.nextSeat}</span> OF THE 100</span></div>
+        <div class="boarding-body">
+          <p class="boarding-lede"><strong>SEAT {String(metrics.nextSeat).padStart(2, "0")} OF THE 100</strong> · {metrics.open} SEATS LEFT IN THE ORIGINAL COHORT</p>
+          <div class="sub-label">WHAT THE SEAT GETS YOU</div>
+          <ul>
+            <li>A <strong>lifetime boarding pass</strong> — unlimited 30-day missions, forever. One payment, once. <em>Standing value $336</em> — the price every latecomer pays to board, every time.</li>
+            <li>A <strong>system-enforced 30-day hatch</strong> — the deadline machine that makes you finish. No extensions, no exceptions, no off switch.</li>
+            <li>A <strong>public crew profile</strong> at <code>theairlock.space/c/[you]</code> — every launch stacked as proof that compounds while you sleep.</li>
+            <li><strong>Live access</strong> to the mission log, crew deck, and event feed — the room of 99 builders shipping alongside you.</li>
+            <li>A <strong>permanent place in THE 100</strong> — first 100 boarders ever. A mark seats 101+ can never buy.</li>
+          </ul>
+          <!-- PROPOSED (Hormozi: bonuses) — the "stacks" reframed as included accountability, no upsell. Drop a bonus if it isn't live yet. -->
+          <div class="sub-label">BUNDLED IN · SWITCH ON AT BOARD · NO UPCHARGE</div>
+          <ul>
+            <li><strong>Crew Alert</strong> — up to 8 named people get a direct push the second your hatch closes on a miss. Cofounder, ex-boss, group chat. <em>You choose who watches.</em></li>
+            <li><strong>The Wake</strong> — an automatic public post on a miss: handle, mission, date. The one feature that actually works.</li>
+            <li><strong>The Redemption Path</strong> — ship two in a row after a miss and every <code>AIRLOCKED</code> stamp gets tagged <code>[REDEEMED]</code>. A way back that's earned, not bought.</li>
+          </ul>
+          <!-- PROPOSED (Hormozi: price anchor) — honest comparison, hedged. Swap the comparison if you'd rather not name it. -->
+          <p class="boarding-anchor">Do the math. An accountability coach runs <strong>$200+ a month</strong> and still can't enforce a deadline. A cohort course that promises "ship in 30 days" runs <strong>$500–$2,000</strong> and still lets you quietly drop out. The Airlock is <strong>one payment of $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span></strong>, the deadline isn't optional, and the seat is yours for the rest of your building life.</p>
+          <!-- PROPOSED (Hormozi: risk reversal that fits the brand — pay once, ship once, free forever) -->
+          <div class="sub-label">THE FINISH GUARANTEE</div>
+          <p class="boarding-guarantee">Pay once. Ship once. Free for life. The moment you hit your first hatch, your $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span> becomes a lifetime tool you never pay for again. We don't promise your app succeeds — we guarantee you'll never again lie awake wondering whether you'd have shipped if the room was watching. This is the only no-refund policy ever written to protect <em>you</em>, from yourself.</p>
+          <a href="/manifest" class="btn btn-primary">SIGN THE MANIFEST · $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span> <span class="arrow">→</span></a>
+          <p class="boarding-micro">The only way this costs you more than $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span> is if you go back to almost-shipping for free. Signing commits you to declaring a mission within 24 hours. Once declared, the 30-day clock is non-negotiable.</p>
+        </div>
+      </div>
+      <PriceLadder tiers={pricingTiers} />
+    </div>
+  </section>
+
+  <section class="wrap section" id="founder" data-reveal>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 08 ]</span> FOUNDER</div>
+        <h2>Built by the guy in seat 01.</h2>
+      </div>
+    </div>
+    <div class="founder-panel">
+      <div class="founder-avatar" aria-label="Auto-generated pixel avatar for Oskar">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <div class="founder-copy">
+        <p><strong>Oskar Freye</strong> — software engineer. Co-founder of fr3n.fan and creavings.com. Freelance at freye.tech.</p>
+        <p>I'm not Marc Lou. I don't have 30 apps and $50K MRR to wave at you.</p>
+        <p>What I have is the specific knowledge that "I'm two weeks away" is the most expensive lie a builder tells themselves. I was two weeks away for four months. The branch was open. The landing page was in its third Figma file. The deploy was almost configured. None of it was shipping.</p>
+        <p>The mechanic that broke me out of it was unreasonable: declare in public, set a date you can't move, pay the cost in front of people when you miss. The Airlock is the room that enforces it.</p>
+        <p>I board with you. Same 30-day clock. Same public log. Same airlock if I miss. If I die, I pay $336 to come back. Seat 01 won't come with me.</p>
+        <p>Seat 01 is mine. Seats 02 through 100 are open. After that, the original cohort is sealed.</p>
+        <div class="receipt-row">
+          {receipts.map((receipt) => <ProductReceiptCard {...receipt} />)}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section faq-section" id="briefing" data-reveal>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 09 ]</span> BRIEFING</div>
+        <h2>Read before you sign the manifest.</h2>
+      </div>
+      <div class="right">Every objection the airlock has heard before. If yours isn't here, you're either the first, or you're not asking the right one.</div>
+    </div>
+    <div class="faq-list">
+      <details open><summary>What if I don't have an idea yet?</summary><p>Wrong room. The Airlock isn't where you find a mission; it's where you ship one. Come back when you can finish the sentence "In 30 days I will ship ___."</p></details>
+      <details><summary>Can I change my mission mid-cycle?</summary><p>No. You declared it. The hatch is built around it. If your real idea shows up on day 12, write it down and board it next cycle.</p></details>
+      <details><summary>What counts as shipping?</summary><p>A URL a stranger can visit, sign up to, and pay you: Stripe, Lemon Squeezy, paid waitlist. If you have to explain why it doesn't have a buy button yet, it's not shipped.</p></details>
+      <details><summary>Does an existing app count?</summary><p>Yes, if the cycle ships a customer-facing release a user would notice and pay for. "I refactored the backend" doesn't count. "I shipped the AI feature behind a paywall on production" does.</p></details>
+      <details><summary>Do I need to be a technical founder?</summary><p>You need a working app live at a URL in 30 days. How it got built is your business. The Airlock cares about hatches, not stacks.</p></details>
+      <details><summary>What if real life happens?</summary><p>The clock doesn't pause. Every pause is a back door, and back doors break the mechanic for everyone else. The 30 days are 30 days.</p></details>
+      <details><summary>Can I extend the deadline?</summary><p>No.</p></details>
+      <details><summary>Can I get a refund?</summary><p>If you're asking, you're already drifting.</p></details>
+      <details><summary>$42 for what, exactly?</summary><p>For the one thing money usually can't buy: finishing. Not a course, not a tool, not another subscription bleeding you monthly. A one-time price for a lifetime seat and a deadline that actually closes. Ship a single app that takes money and it has already paid for itself many times over. The seat that does nothing is the unshipped app you already have.</p></details>
+      <details><summary>Isn't public failure too harsh?</summary><p>It's exactly as harsh as you make it. Hit your hatch and nobody ever sees a stamp. The pressure isn't there to punish you — it's the only thing that's ever reliably converted "I'll ship next month" into shipped. If the stakes feel too high, that's the feeling of finally having skin in the game.</p></details>
+      <details><summary>What is THE 100?</summary><p>The first 100 builders ever boarded. The original cohort. The mark stays on your profile forever, alongside every launch and every airlock event.</p></details>
+      <details><summary>What happens after seat 100?</summary><p>Price flattens at $336. New boarders pay it every time, forever. THE 100 is sealed. You don't join later; you missed the boat.</p></details>
+      <details><summary>If I'm airlocked, does my THE 100 mark stay?</summary><p>No. When you die, your seat is vacated and you exit THE 100. If you re-board at $336, you come back as a new seat, never the original 100 again.</p></details>
+      <details><summary>Is this a course?</summary><p>No. There's nothing to learn. The Airlock is a 30-day deadline, a public profile, a system that publishes when you miss, and a room with 99 other people doing the same thing. Hiding is expensive.</p></details>
+    </div>
+  </section>
+
+  {/* PROPOSED — Lead magnet (100M Leads): capture the not-ready-yet instead of losing them.
+      Needs: a real form endpoint + list, and styling for .leadgen-row / .leadgen-form.
+      Delete this whole section if you want the page to stay single-CTA. */}
+  <section class="wrap section" id="watch" data-reveal>
+    <div class="section-head">
+      <div>
+        <div class="label"><span class="n">[ 10 ]</span> NOT BOARDING TODAY?</div>
+        <h2>Then watch someone else's hatch. <em>Free.</em></h2>
+      </div>
+      <div class="right">Not everyone's mission is ready this week. Fine. Watch the boat work before you bet on it: get the next airlock event the moment it fires — handle, mission, missed deadline — plus the occasional note on how the people who ship actually do it.</div>
+    </div>
+    <div class="leadgen-row">
+      <form class="leadgen-form" action="#" method="post" data-leadgen>
+        <input type="email" name="email" placeholder="you@domain.com" autocomplete="email" required />
+        <button type="submit" class="btn btn-primary">Watch the Hatch <span class="arrow">→</span></button>
+      </form>
+      <p class="boarding-micro">No spam, no drip funnel theatre. The log, when it moves. Unsubscribe in one click. When your mission's ready, the manifest is one scroll up.</p>
+    </div>
+  </section>
+
+  <section class="final-cta" data-reveal>
+    <div class="wrap final-inner">
+      <canvas class="pixel-banner" data-sprite="banner" width="120" height="30"></canvas>
+      <div class="label mono"><span>●</span> FINAL TRANSMISSION</div>
+      <h2>The ship is moving.<br/><em>Are you boarding?</em></h2>
+      <p>Thirty days from now you'll either have a live app that takes money, or one more month of "almost." The seat is $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span> today and doubles a tier from now. Sign the manifest. Declare your mission. Ship — or watch the hatch open from the wrong side of the glass.</p>
+      <div class="cta-row">
+        <a href="/manifest" class="btn btn-primary">Sign the Manifest · $<span data-state-field="nextSeatPrice">{metrics.nextSeatPrice}</span> <span class="arrow">→</span></a>
+        <a href="#log" class="btn btn-ghost">See the Mission Log first</a>
+      </div>
+      <div class="micro">NO PASSENGERS · ONLY BUILDERS · THE 100 IS BOARDING</div>
+    </div>
+  </section>
+
+  <footer class="site">
+    <div class="wrap row">
+      <div>© THE AIRLOCK · theairlock.space</div>
+      <div class="links">
+        <a href="#protocol">PROTOCOL</a>
+        <a href="#log">MISSION LOG</a>
+        <a href="#cabin">THE CABIN</a>
+        <a href="/airlock">THE WAKE</a>
+        <a href="#">CHANGELOG</a>
+        <a href="mailto:oskar@theairlock.space">CONTACT</a>
+      </div>
+      <div>STATUS · <span>SHIP NOMINAL</span></div>
+    </div>
+  </footer>
+</div>
+
+<script is:inline src="/airlock-cruiser.js"></script>
+<script is:inline src="/scene.js"></script>
+<script is:inline src="/sprites.js"></script>
+<script is:inline src="/reveals.js"></script>
+<script is:inline src="/airlock.js"></script>
+</body>
 </html>

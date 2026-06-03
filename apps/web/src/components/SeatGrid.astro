@@ -1,0 +1,69 @@
+---
+import { padSeat, seatLabel, type SeatSnapshot } from "../lib/airlock-data";
+
+interface Props {
+  seats: SeatSnapshot[];
+  size?: "compact" | "large";
+  showLegend?: boolean;
+}
+
+const { seats, size = "large", showLegend = true } = Astro.props;
+
+function hatchTooltip(deadline?: string): string {
+  if (!deadline) return "hatch pending";
+  const target = new Date(deadline).getTime();
+  if (!Number.isFinite(target)) return "hatch pending";
+  const remaining = target - Date.now();
+  if (remaining <= 0) return "HATCH CLOSED";
+  const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+  if (days > 0) return `hatch in ${days}d ${String(hours).padStart(2, "0")}h`;
+  if (hours > 0) return `hatch in ${hours}h ${String(minutes).padStart(2, "0")}m`;
+  return `hatch in ${minutes}m`;
+}
+---
+
+<div class:list={["seat-grid-shell", `seat-grid-shell--${size}`]} data-seat-grid>
+  <div class:list={["seat-grid", `seat-grid--${size}`]}>
+    {
+      seats.map((seat) => {
+        const href =
+          seat.status === "OPEN"
+            ? "/manifest"
+            : seat.handle
+              ? `/c/${seat.handle}`
+              : "/airlock";
+        const tooltip =
+          seat.status === "OPEN"
+            ? `${seatLabel(seat.seatNumber)} · NEXT TO FILL AT $${seat.price}`
+            : seat.status === "VACATED"
+              ? `${seatLabel(seat.seatNumber)} · @${seat.handle ?? "unknown"} · ${seat.vacatedOn ?? "mission unknown"} · VACATED ${seat.vacatedAt ? new Date(seat.vacatedAt).toISOString().slice(0, 10) : "date unknown"}`
+              : `${seat.handle ? `@${seat.handle}` : seatLabel(seat.seatNumber)} · ${seat.mission ?? "mission pending"} · ${hatchTooltip(seat.hatchAt)}`;
+
+        return (
+          <a
+            class:list={["seat-cell", `is-${seat.status.toLowerCase()}`]}
+            href={href}
+            aria-label={tooltip}
+            data-seat-number={seat.seatNumber}
+            data-seat-status={seat.status}
+            data-tooltip={tooltip}
+          >
+            <span>{seat.status === "VACATED" ? "x" : seat.status === "OCCUPIED" ? "■" : padSeat(seat.seatNumber)}</span>
+          </a>
+        );
+      })
+    }
+  </div>
+
+  {
+    showLegend && (
+      <div class="seat-legend">
+        <span><i class="legend-box occupied"></i> OCCUPIED</span>
+        <span><i class="legend-box vacated"></i> VACATED</span>
+        <span><i class="legend-box open"></i> OPEN</span>
+      </div>
+    )
+  }
+</div>

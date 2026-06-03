@@ -1,0 +1,32 @@
+---
+import { SignIn } from "@clerk/astro/components";
+import { normalizeReturnTo } from "../../lib/auth";
+
+const returnTo = Astro.url.searchParams.get("return_to") ?? Astro.url.searchParams.get("redirect_url") ?? "/manifest";
+const safeReturnTo = normalizeReturnTo(returnTo);
+const signUpUrl = `/auth/signup?return_to=${encodeURIComponent(safeReturnTo)}`;
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Authenticate · The Airlock</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .login-shell {
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+  </style>
+</head>
+<body>
+  <main class="login-shell">
+    <SignIn routing="hash" fallbackRedirectUrl={safeReturnTo} signUpFallbackRedirectUrl={safeReturnTo} signUpUrl={signUpUrl} />
+  </main>
+</body>
+</html>

@@ -1,0 +1,615 @@
+---
+import StatusBadge from "../components/StatusBadge.astro";
+import { clerkSessionToken, isAdminUserID } from "../lib/auth";
+import { formatUtc } from "../lib/airlock-data";
+
+type MissionStatus = "DECLARED" | "PROOF_PENDING" | "CONFIRMED" | "AIRLOCKED";
+
+interface DashboardMission {
+  mission_id: string;
+  declaration: string;
+  declaration_url?: string;
+  status: MissionStatus;
+  declared_at: string;
+  deadline_at: string;
+  proof_url?: string;
+  proof_submitted_at?: string;
+  confirmed_at?: string;
+  airlocked_at?: string;
+}
+
+interface DashboardSeat {
+  seat_id: string;
+  seat_number: number;
+  seat_label: string;
+  cohort: "THE_100" | "POST_100";
+  status: "OCCUPIED" | "VACATED";
+  boarded_at?: string;
+  price_paid?: {
+    display: string;
+  };
+}
+
+interface DashboardStack {
+  crew_alert_enabled: boolean;
+  crew_alert_contacts: string[];
+  the_wake_enabled: boolean;
+  reentry_challenge_enabled: boolean;
+}
+
+interface DashboardState {
+  has_seat: boolean;
+  has_mission: boolean;
+  has_reboarded: boolean;
+  can_declare: boolean;
+  can_submit_proof: boolean;
+  declare_by?: string;
+  seat?: DashboardSeat;
+  mission?: DashboardMission;
+  stack?: DashboardStack;
+  profile?: {
+    handle: string;
+    display_name: string;
+    profile_path: string;
+    avatar_url?: string;
+    avatar_status?: "NONE" | "PENDING" | "READY" | "FAILED";
+    bio?: string;
+  };
+}
+
+interface AchievementNode {
+  id: string;
+  label: string;
+  description: string;
+  earned: boolean;
+  tone: string;
+}
+
+interface AchievementBranch {
+  id: string;
+  label: string;
+  nodes: AchievementNode[];
+}
+
+interface AchievementsResponse {
+  earned_count: number;
+  total_count: number;
+  branches: AchievementBranch[];
+}
+
+interface AnalyticsResponse {
+  profile_views: number;
+}
+
+interface CrewEvent {
+  handle?: string;
+  message?: string;
+  display_label?: string;
+  occurred_at?: string;
+  kind?: string;
+}
+
+interface FeedRow {
+  time: string;
+  icon: string;
+  handle: string;
+  message: string;
+  tag: string;
+  tone: string;
+}
+
+const dashboard = await loadDashboard();
+const achievements = await loadAchievements();
+const analytics = await loadAnalytics();
+const feed = await loadCrewFeed();
+const showAdminReview = isAdminUserID(Astro.locals.auth().userId);
+const discordUrl = typeof import.meta.env.PUBLIC_DISCORD_URL === "string" ? import.meta.env.PUBLIC_DISCORD_URL.trim() : "";
+const stack = dashboard.stack ?? {
+  crew_alert_enabled: false,
+  crew_alert_contacts: [],
+  the_wake_enabled: false,
+  reentry_challenge_enabled: false,
+};
+const profilePath = dashboard.profile?.profile_path ?? "/manifest";
+const handle = dashboard.profile?.handle ?? "";
+const handleLabel = handle !== "" ? `@${handle}` : "PUBLIC PROFILE";
+const avatarStatus = dashboard.profile?.avatar_status ?? "NONE";
+const avatarUrl = dashboard.profile?.avatar_url ?? "";
+const avatarSrc = avatarUrl !== "" ? avatarUrl : "/astronaut-default.svg";
+const profileDisplayName = dashboard.profile?.display_name ?? "";
+const profileBio = dashboard.profile?.bio ?? "";
+const profileViews = analytics.profile_views;
+
+const seat = dashboard.seat;
+const seatPill = seat
+  ? seat.cohort === "THE_100"
+    ? `THE 100 · SEAT ${seat.seat_label}`
+    : `SEAT ${seat.seat_label}`
+  : "UNBOARDED";
+
+const mission = dashboard.mission;
+const missionStatus = mission?.status;
+const consoleState = resolveConsoleState();
+
+const tabs = [
+  { id: "console", label: "CONSOLE" },
+  { id: "record", label: "RECORD" },
+  { id: "quarters", label: "QUARTERS" },
+  { id: "crew", label: "CREW" },
+];
+
+function resolveConsoleState():
+  | "no-seat"
+  | "boarded-undeclared"
+  | "declared-active"
+  | "proof-pending"
+  | "confirmed-idle"
+  | "airlocked" {
+  if (!dashboard.has_seat) return "no-seat";
+  if (!mission) return "boarded-undeclared";
+  if (missionStatus === "PROOF_PENDING") return "proof-pending";
+  if (missionStatus === "CONFIRMED") return "confirmed-idle";
+  if (missionStatus === "AIRLOCKED") return "airlocked";
+  return "declared-active";
+}
+
+async function loadDashboard(): Promise<DashboardState> {
+  const fallback = {
+    has_seat: false,
+    has_mission: false,
+    has_reboarded: false,
+    can_declare: false,
+    can_submit_proof: false,
+  };
+  const token = await clerkSessionToken(Astro);
+  const rawBase = import.meta.env.PUBLIC_API_URL;
+  if (!token || typeof rawBase !== "string" || rawBase.trim() === "") {
+    return fallback;
+  }
+  try {
+    const response = await fetch(new URL("/api/me/airlock", rawBase), {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) return fallback;
+    return (await response.json()) as DashboardState;
+  } catch {
+    return fallback;
+  }
+}
+
+async function loadAchievements(): Promise<AchievementsResponse> {
+  const fallback = { earned_count: 0, total_count: 0, branches: [] };
+  const token = await clerkSessionToken(Astro);
+  const rawBase = import.meta.env.PUBLIC_API_URL;
+  if (!token || typeof rawBase !== "string" || rawBase.trim() === "") {
+    return fallback;
+  }
+  try {
+    const response = await fetch(new URL("/api/me/achievements", rawBase), {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) return fallback;
+    return (await response.json()) as AchievementsResponse;
+  } catch {
+    return fallback;
+  }
+}
+
+async function loadAnalytics(): Promise<AnalyticsResponse> {
+  const fallback = { profile_views: 0 };
+  const token = await clerkSessionToken(Astro);
+  const rawBase = import.meta.env.PUBLIC_API_URL;
+  if (!token || typeof rawBase !== "string" || rawBase.trim() === "") {
+    return fallback;
+  }
+  try {
+    const response = await fetch(new URL("/api/me/analytics", rawBase), {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) return fallback;
+    const parsed = (await response.json()) as Partial<AnalyticsResponse>;
+    return { profile_views: typeof parsed.profile_views === "number" ? parsed.profile_views : 0 };
+  } catch {
+    return fallback;
+  }
+}
+
+async function loadCrewFeed(): Promise<FeedRow[]> {
+  const rawBase = import.meta.env.PUBLIC_API_URL;
+  if (typeof rawBase !== "string" || rawBase.trim() === "") {
+    return [];
+  }
+  try {
+    const response = await fetch(new URL("/api/state", rawBase), {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return [];
+    const snapshot = (await response.json()) as { recent_events?: CrewEvent[] };
+    const events = Array.isArray(snapshot.recent_events) ? snapshot.recent_events : [];
+    return events.slice(0, 8).map(mapCrewEvent);
+  } catch {
+    return [];
+  }
+}
+
+function mapCrewEvent(event: CrewEvent): FeedRow {
+  const eventHandle = event.handle ?? "unknown";
+  const handleToken = `@${eventHandle}`;
+  const rawMessage = event.message ?? "";
+  const message = rawMessage.startsWith(handleToken) ? rawMessage.slice(handleToken.length).trim() : rawMessage;
+  const when = event.occurred_at ? new Date(event.occurred_at) : null;
+  const time = when && !Number.isNaN(when.getTime()) ? when.toISOString().slice(11, 19) : "--:--:--";
+  const icon = event.kind === "AIRLOCKED" ? "v" : event.kind === "CONFIRMED" ? "^" : "->";
+  const tone = event.kind === "AIRLOCKED" ? "airlock" : event.kind === "CONFIRMED" ? "launch" : "";
+  return {
+    time,
+    icon,
+    handle: `@${eventHandle}`,
+    message,
+    tag: event.display_label ?? event.kind ?? "",
+    tone,
+  };
+}
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard · The Airlock</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="page-shell">
+    <nav class="page-nav mono">
+      <a href="/">THE AIRLOCK</a>
+      <a href={profilePath}>{handleLabel}</a>
+      {showAdminReview ? <a href="/admin/review">PROOF REVIEW</a> : null}
+      <a href="/airlock">THE WAKE</a>
+    </nav>
+
+    <header class="id-strip" data-tab-nav>
+      <div class="id-strip-brand">
+        <span class="id-strip-mark"></span>
+        <div class="id-strip-id mono">
+          <span class="id-strip-handle">{handleLabel}</span>
+          <span class="id-strip-seat">{seatPill}</span>
+        </div>
+      </div>
+      <div class="id-tabs mono">
+        {tabs.map((tab, index) => (
+          <button type="button" class="id-tab" data-tab={tab.id} data-active={index === 0 ? "true" : null}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </header>
+
+    {/* ============================ CONSOLE ============================ */}
+    <section class="tab-panel" data-tab-panel="console" data-active="true">
+      <div class="profile-grid">
+        <div class="panel profile-card profile-card--wide">
+          <div class="corners"><i></i><i></i></div>
+          <div class="panel-head">
+            <span>{dashboard.has_seat ? "CURRENT MISSION" : "BOARDING STATUS"}</span>
+            <span>{mission ? <StatusBadge status={mission.status} /> : "NO ACTIVE MISSION"}</span>
+          </div>
+          <div class="profile-card-body">
+            {consoleState === "no-seat" ? (
+              <>
+                <h2>No seat assigned.</h2>
+                <p>Sign the manifest, clear checkout, then return here to declare.</p>
+                <a href="/manifest" class="btn btn-primary">SIGN THE MANIFEST <span class="arrow">→</span></a>
+              </>
+            ) : null}
+
+            {consoleState === "boarded-undeclared" ? (
+              <>
+                <h2>SEAT HELD · NO MISSION DECLARED.</h2>
+                <p>{seatPill} · DECLARE BY {dashboard.declare_by ? `${formatUtc(dashboard.declare_by)} UTC` : "24H AFTER BOARDING"}</p>
+              </>
+            ) : null}
+
+            {consoleState === "declared-active" && mission ? (
+              <>
+                <h2>"{mission.declaration}"</h2>
+                <div class="console-countdown" data-deadline={mission.deadline_at}>
+                  <span class="cc-readout">calculating</span>
+                  <span class="cc-cap mono">UNTIL HATCH CLOSE</span>
+                </div>
+                <p>DECLARED {formatUtc(mission.declared_at)} · DEADLINE {formatUtc(mission.deadline_at)} UTC</p>
+                {mission.declaration_url ? <p>MISSION URL <a href={mission.declaration_url}>{mission.declaration_url}</a></p> : null}
+                {dashboard.can_submit_proof ? (
+                  <form class="mission-form" data-airlock-form action={`/api/missions/${mission.mission_id}/proof`} method="post">
+                    <label for="proof_url">PROOF URL</label>
+                    <div class="mission-form-row">
+                      <input id="proof_url" name="proof_url" type="url" inputmode="url" placeholder="https://your-app.com/checkout" required />
+                      <button type="submit">SUBMIT PROOF</button>
+                    </div>
+                    <p class="form-status mono" data-form-status>PROOF MUST LAND BEFORE HATCH CLOSE</p>
+                  </form>
+                ) : null}
+              </>
+            ) : null}
+
+            {consoleState === "proof-pending" && mission ? (
+              <>
+                <h2>"{mission.declaration}"</h2>
+                <p>DECLARED {formatUtc(mission.declared_at)} · DEADLINE {formatUtc(mission.deadline_at)} UTC</p>
+                {mission.proof_url ? <p>PROOF <a href={mission.proof_url}>{mission.proof_url}</a></p> : null}
+                <p class="form-status mono">AWAITING MANUAL REVIEW</p>
+              </>
+            ) : null}
+
+            {consoleState === "confirmed-idle" && mission ? (
+              <>
+                <h2>"{mission.declaration}"</h2>
+                <p class="form-status mono">CONFIRMED · DECLARE WHEN READY</p>
+                <p>CONFIRMED {mission.confirmed_at ? `${formatUtc(mission.confirmed_at)} UTC` : "—"}</p>
+              </>
+            ) : null}
+
+            {consoleState === "airlocked" && mission ? (
+              <>
+                <h2>AIRLOCKED · "{mission.declaration}"</h2>
+                <StatusBadge status="AIRLOCKED" />
+                <p>30 DAYS, 0 PROOF · HATCH CLOSED {mission.airlocked_at ? `${formatUtc(mission.airlocked_at)} UTC` : ""}</p>
+                <p class="form-status mono">THE SEAT REMEMBERS. RE-BOARD TO RIDE AGAIN.</p>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        <div class="panel profile-card">
+          <div class="corners"><i></i><i></i></div>
+          <div class="panel-head"><span>DECLARE NEXT</span><span>30-DAY GOAL</span></div>
+          <div class="profile-card-body">
+            {
+              dashboard.can_declare ? (
+                <form class="mission-form mission-form--stacked" data-airlock-form action="/api/missions" method="post">
+                  <label for="declaration_url">30-DAY GOAL URL</label>
+                  <input id="declaration_url" name="declaration_url" type="url" inputmode="url" placeholder="https://your-app.com" required />
+                  <label for="declaration">ONE SENTENCE</label>
+                  <textarea id="declaration" name="declaration" rows="5" maxlength="180" placeholder="Ship Airlock v1.0 + Stripe checkout" required></textarea>
+                  <button type="submit">DECLARE MISSION</button>
+                  <p class="form-status mono" data-form-status>{dashboard.declare_by ? `DECLARE BEFORE ${formatUtc(dashboard.declare_by)} UTC` : "THE 30-DAY CLOCK STARTS NOW"}</p>
+                </form>
+              ) : (
+                <p class="form-status mono">{dashboard.has_seat ? "ONE ACTIVE MISSION AT A TIME" : "OCCUPIED SEAT REQUIRED"}</p>
+              )
+            }
+          </div>
+        </div>
+
+        <div class="panel profile-card profile-card--wide">
+          <div class="corners"><i></i><i></i></div>
+          <div class="panel-head"><span>OPTIONAL STACKS</span></div>
+          <div class="profile-card-body">
+            {
+              dashboard.has_seat ? (
+                <form class="mission-form mission-form--stacked" data-airlock-form action="/api/stacks/current" method="post">
+                  <label for="crew_alert_enabled">CREW ALERT</label>
+                  <label class="stack-toggle" for="crew_alert_enabled">
+                    <input id="crew_alert_enabled" name="crew_alert_enabled" type="checkbox" value="true" checked={stack.crew_alert_enabled} />
+                    <span>DIRECT PUSH ON MISS</span>
+                  </label>
+                  <textarea id="crew_alert_contacts" name="crew_alert_contacts" rows="5" maxlength="1280" placeholder="cofounder@example.com&#10;+15555550123&#10;Launch group chat">{stack.crew_alert_contacts.join("\n")}</textarea>
+
+                  <label for="the_wake_enabled">THE WAKE</label>
+                  <label class="stack-toggle" for="the_wake_enabled">
+                    <input id="the_wake_enabled" name="the_wake_enabled" type="checkbox" value="true" checked={stack.the_wake_enabled} />
+                    <span>POST THE PRESET MISS TEMPLATE</span>
+                  </label>
+                  <p class="form-status mono">THE WAKE USES THE PRESET FORMAT ONLY</p>
+                  {dashboard.has_reboarded ? (
+                    <>
+                      <label for="reentry_challenge_enabled">RE-ENTRY CHALLENGE</label>
+                      <label class="stack-toggle" for="reentry_challenge_enabled">
+                        <input id="reentry_challenge_enabled" name="reentry_challenge_enabled" type="checkbox" value="true" checked={stack.reentry_challenge_enabled} />
+                        <span>OPT INTO TWO-WIN REDEMPTION</span>
+                      </label>
+                    </>
+                  ) : null}
+                  <button type="submit">SAVE STACKS</button>
+                  <p class="form-status mono" data-form-status>STACKS ARM AT HATCH CLOSE</p>
+                </form>
+              ) : (
+                <p class="form-status mono">STACKS ARM AFTER BOARDING</p>
+              )
+            }
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* ============================ RECORD ============================ */}
+    <section class="tab-panel" data-tab-panel="record">
+      <div class="panel record-panel">
+        <div class="corners"><i></i><i></i></div>
+        <div class="panel-head">
+          <span>SERVICE RECORD · TROPHY WALL</span>
+          <span>EARNED {achievements.earned_count} / {achievements.total_count}</span>
+        </div>
+        <div class="record-body">
+          {achievements.branches.length > 0 ? (
+            achievements.branches.map((branch) => (
+              <div class="trophy-branch">
+                <div class="trophy-branch-head mono">
+                  <span class="n">{branch.label}</span>
+                </div>
+                <div class="trophy-grid">
+                  {branch.nodes.map((node) => (
+                    <div
+                      class:list={["trophy-node", node.earned ? "is-earned" : "is-locked", node.tone === "hatch" ? "tone-hatch" : "tone-ice"]}
+                    >
+                      <div class="trophy-node-state mono">{node.earned ? "● EARNED" : "○ LOCKED"}</div>
+                      <div class="trophy-node-label">{node.label}</div>
+                      <div class="trophy-node-desc mono">{node.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : (
+            <p class="form-status mono">RECORD UNAVAILABLE · LOG OFFLINE</p>
+          )}
+        </div>
+      </div>
+    </section>
+
+    {/* ============================ QUARTERS ============================ */}
+    <section class="tab-panel" data-tab-panel="quarters">
+      <div class="profile-grid">
+        <div class="panel profile-card">
+          <div class="corners"><i></i><i></i></div>
+          <div class="panel-head"><span>IDENTITY · SUIT</span><span>{avatarStatus}</span></div>
+          <div class="profile-card-body">
+            {
+              dashboard.has_seat ? (
+                <div class="suit-panel">
+                  <img
+                    id="avatar-img"
+                    class="suit-avatar"
+                    src={avatarSrc}
+                    alt="Your astronaut suit"
+                    width="64"
+                    height="64"
+                  />
+                  <div class="suit-panel-copy">
+                    <p>Everyone boards in a suit. Upload a face to ride visor-up, or stay visor-down.</p>
+                    <form id="avatar-form" class="mission-form mission-form--stacked">
+                      <label for="avatar_file">SUIT PHOTO</label>
+                      <input
+                        id="avatar_file"
+                        name="avatar"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                      />
+                      <div class="suit-actions">
+                        <button id="avatar-generate" type="submit">GENERATE SUIT</button>
+                        <button id="avatar-drop" type="button" class="suit-btn-ghost">DROP VISOR (use default)</button>
+                      </div>
+                      <p class="form-status mono" id="avatar-status" data-avatar-status data-default-src="/astronaut-default.svg">
+                        {avatarStatus === "READY" ? "VISOR UP · FACE LOCKED" : "VISOR DOWN · DEFAULT SUIT"}
+                      </p>
+                    </form>
+                  </div>
+                </div>
+              ) : (
+                <p class="form-status mono">BOARD FIRST</p>
+              )
+            }
+          </div>
+        </div>
+
+        <div class="panel profile-card">
+          <div class="corners"><i></i><i></i></div>
+          <div class="panel-head"><span>PROFILE</span><span>PUBLIC</span></div>
+          <div class="profile-card-body">
+            {
+              dashboard.has_seat ? (
+                <>
+                  <form id="profile-form" class="mission-form mission-form--stacked" action="/api/me/profile" method="put">
+                    <label for="display_name">DISPLAY NAME</label>
+                    <input
+                      id="display_name"
+                      name="display_name"
+                      type="text"
+                      maxlength="60"
+                      placeholder="Your name"
+                      value={profileDisplayName}
+                      required
+                    />
+                    <label for="bio">BIO</label>
+                    <textarea
+                      id="bio"
+                      name="bio"
+                      rows="4"
+                      maxlength="280"
+                      placeholder="One line about the build. (max 280)"
+                    >{profileBio}</textarea>
+                    <button type="submit">SAVE PROFILE</button>
+                    <p class="form-status mono" data-form-status>BIO IS PUBLIC ON YOUR PROFILE</p>
+                  </form>
+                  <div class="telemetry-line mono">
+                    <span class="tl-k">PROFILE VIEWS</span>
+                    <span class="tl-dot">·</span>
+                    <span class="tl-v">{profileViews}</span>
+                  </div>
+                  <a class="quarters-link mono" href={profilePath}>PUBLIC PROFILE {handleLabel} <span class="arrow">→</span></a>
+                </>
+              ) : (
+                <p class="form-status mono">BOARD FIRST</p>
+              )
+            }
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* ============================ CREW ============================ */}
+    <section class="tab-panel" data-tab-panel="crew">
+      <div class="panel feed-panel" data-event-feed>
+        <div class="corners"><i></i><i></i></div>
+        <div class="panel-head">
+          <span>CREW FEED · LIVE</span>
+          <span class="live"><i class="dot"></i> STREAMING</span>
+        </div>
+        <div class="feed">
+          {feed.length > 0 ? (
+            feed.map((entry) => (
+              <div class="entry">
+                <span class="ts">{entry.time}</span>
+                <span class:list={["msg", entry.tone]}>
+                  {entry.icon} <span class="who">{entry.handle}</span> {entry.message}
+                </span>
+                <span class="tag">{entry.tag}</span>
+              </div>
+            ))
+          ) : (
+            <div class="entry">
+              <span class="ts">--:--:--</span>
+              <span class="msg">no crew activity yet · the boat is quiet</span>
+              <span class="tag">IDLE</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div class="panel crew-door">
+        <div class="corners"><i></i><i></i></div>
+        <div class="panel-head"><span>CREW CHANNEL</span></div>
+        <div class="profile-card-body crew-door-body">
+          {discordUrl !== "" ? (
+            <>
+              <p>The crew talks behind the hatch. Boarders only.</p>
+              <a class="btn btn-primary" href={discordUrl} target="_blank" rel="noopener noreferrer">JOIN THE CREW ON DISCORD <span class="arrow">→</span></a>
+            </>
+          ) : (
+            <>
+              <p>The crew channel is being pressurized.</p>
+              <span class="crew-door-disabled mono">CREW CHANNEL · OPENING SOON</span>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  </main>
+  <script is:inline src="/airlock.js"></script>
+  <script is:inline src="/dashboard.js" defer></script>
+  <script is:inline src="/avatar.js" defer></script>
+  <script is:inline src="/dashboard-tabs.js" defer></script>
+  <script is:inline src="/console-countdown.js" defer></script>
+</body>
+</html>

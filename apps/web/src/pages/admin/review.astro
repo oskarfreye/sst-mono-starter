@@ -1,0 +1,131 @@
+---
+type MissionStatus = "DECLARED" | "PROOF_PENDING" | "CONFIRMED" | "AIRLOCKED";
+
+interface StateMission {
+  mission_id: string;
+  declaration: string;
+  declaration_url?: string;
+  status: MissionStatus;
+  deadline_at: string;
+  proof_url?: string;
+  proof_submitted_at?: string;
+}
+
+interface StateSeat {
+  seat_id: string;
+  seat_label: string;
+  status: string;
+  occupant?: {
+    handle: string;
+    handle_display: string;
+    display_name: string;
+  };
+  mission?: StateMission;
+}
+
+interface StateSnapshot {
+  active_seats?: StateSeat[];
+  vacated_seats?: StateSeat[];
+}
+
+interface PendingReview {
+  seat: StateSeat;
+  mission: StateMission;
+}
+
+const pendingReviews = await loadPendingReviews(Astro.url);
+
+async function loadPendingReviews(url: URL): Promise<PendingReview[]> {
+  try {
+    const response = await fetch(new URL("/api/state", url), {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return [];
+    const state = (await response.json()) as StateSnapshot;
+    return [...(state.active_seats ?? []), ...(state.vacated_seats ?? [])]
+      .filter((seat): seat is StateSeat & { mission: StateMission } => seat.mission?.status === "PROOF_PENDING")
+      .map((seat) => ({ seat, mission: seat.mission }));
+  } catch {
+    return [];
+  }
+}
+
+function formatReviewTime(iso?: string): string {
+  if (!iso) return "UNKNOWN";
+  return new Intl.DateTimeFormat("en", {
+    timeZone: "UTC",
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(new Date(iso))
+    .replace(",", "");
+}
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Proof Review · The Airlock</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="page-shell">
+    <nav class="page-nav mono">
+      <a href="/">THE AIRLOCK</a>
+      <a href="/dashboard">DASHBOARD</a>
+      <a href="/airlock">THE WAKE</a>
+    </nav>
+
+    <header class="page-hero">
+      <div class="label"><span class="n">ADMIN</span> PROOF REVIEW</div>
+      <h1>Check the URL. Close the loop.</h1>
+      <p>Confirm live payment, or open the hatch.</p>
+    </header>
+
+    {
+      pendingReviews.length > 0 ? (
+        <section class="profile-grid">
+          {pendingReviews.map(({ seat, mission }) => (
+            <article class="panel profile-card profile-card--wide">
+              <div class="corners"><i></i><i></i></div>
+              <div class="panel-head">
+                <span>{seat.occupant?.handle_display ?? "UNKNOWN"} · SEAT {seat.seat_label}</span>
+                <span>SUBMITTED {formatReviewTime(mission.proof_submitted_at)}</span>
+              </div>
+              <div class="profile-card-body">
+                <h2>"{mission.declaration}"</h2>
+                <p>DEADLINE {formatReviewTime(mission.deadline_at)} UTC</p>
+                {mission.declaration_url ? <p>DECLARED URL <a href={mission.declaration_url} rel="noreferrer" target="_blank">{mission.declaration_url}</a></p> : null}
+                <p>PROOF URL <a href={mission.proof_url} rel="noreferrer" target="_blank">{mission.proof_url}</a></p>
+                <div class="dashboard-actions">
+                  <form data-airlock-form action={`/api/admin/missions/${mission.mission_id}/confirm`} method="post">
+                    <button type="submit">CONFIRM PROOF</button>
+                  </form>
+                  <form data-airlock-form action={`/api/admin/missions/${mission.mission_id}/reject`} method="post">
+                    <button type="submit">REJECT · AIRLOCK</button>
+                  </form>
+                </div>
+                <p class="form-status mono" data-form-status>AWAITING REVIEW</p>
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <section class="empty-state">
+          <div class="label"><span class="n">CLEAR</span> REVIEW QUEUE</div>
+          <h1>No proof pending.</h1>
+          <p>The board is quiet.</p>
+        </section>
+      )
+    }
+  </main>
+  <script is:inline src="/dashboard.js" defer></script>
+</body>
+</html>

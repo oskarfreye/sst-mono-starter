@@ -1,0 +1,457 @@
+---
+import StatusBadge from "../../components/StatusBadge.astro";
+import { clerkSessionToken } from "../../lib/auth";
+import {
+  currentMission,
+  formatDate,
+  formatUtc,
+  metrics,
+  seatLabel as staticSeatLabel,
+} from "../../lib/airlock-data";
+
+type MissionStatus = "DECLARED" | "PROOF_PENDING" | "CONFIRMED" | "AIRLOCKED";
+
+interface StateMission {
+  mission_id: string;
+  declaration: string;
+  declaration_url?: string;
+  status: MissionStatus;
+  declared_at: string;
+  deadline_at: string;
+  proof_url?: string;
+  proof_submitted_at?: string;
+  confirmed_at?: string;
+  airlocked_at?: string;
+  redeemed?: boolean;
+}
+
+interface StateSeat {
+  seat_id: string;
+  seat_number: number;
+  seat_label: string;
+  cohort: "THE_100" | "POST_100";
+  status: "OCCUPIED" | "OPEN" | "VACATED";
+  boarded_at?: string;
+  vacated_at?: string;
+  vacated_on_mission_id?: string;
+  reboarded_as_seat_id?: string;
+  reboarded_as_seat_label?: string;
+  occupant?: {
+    handle: string;
+    handle_display: string;
+    display_name: string;
+    role: string;
+    profile_path: string;
+    avatar_url?: string;
+  };
+  mission?: StateMission;
+  stack?: {
+    crew_alert_enabled: boolean;
+    crew_alert_contact_count: number;
+    the_wake_enabled: boolean;
+    reentry_challenge_enabled: boolean;
+  };
+  price_paid?: {
+    display: string;
+  };
+}
+
+interface StateMissionHistoryEntry extends StateMission {
+  seat_id: string;
+  seat_number: number;
+  seat_label: string;
+  cohort: "THE_100" | "POST_100";
+  handle: string;
+  handle_display: string;
+}
+
+interface StateSnapshot {
+  active_seats?: StateSeat[];
+  vacated_seats?: StateSeat[];
+  mission_history?: StateMissionHistoryEntry[];
+  next_seat?: {
+    price?: {
+      display: string;
+    };
+  };
+}
+
+interface ProfileState {
+  handle: string;
+  displayName: string;
+  currentSeat?: StateSeat;
+  seats: StateSeat[];
+  missions: StateMissionHistoryEntry[];
+  missionsDeclared: number;
+  missionsConfirmed: number;
+  missionsAirlocked: number;
+  longestConfirmedStreak: number;
+  timeOnBoatDays: number;
+  totalPaid: string;
+}
+
+interface DashboardOwnerState {
+  can_declare?: boolean;
+  profile?: {
+    handle: string;
+  };
+}
+
+const handle = (Astro.params.handle ?? "").toLowerCase();
+const profile = await loadProfile(Astro.url, handle);
+const isOskarFallback = !profile && handle === "oskar";
+if (!profile && !isOskarFallback) {
+  Astro.response.status = 404;
+}
+
+const current = profile?.currentSeat;
+const currentProfileMission = current?.mission;
+const historySeats = profile?.seats ?? [];
+const latestVacatedSeat = [...historySeats]
+  .filter((seat) => seat.status === "VACATED")
+  .sort((a, b) => compareOptionalIsoDesc(a.vacated_at, b.vacated_at) || b.seat_number - a.seat_number)[0];
+const missionForDisplay = currentProfileMission ?? (isOskarFallback ? {
+  mission_id: currentMission.missionId,
+  declaration: currentMission.mission,
+  declaration_url: currentMission.declarationUrl,
+  status: currentMission.status,
+  declared_at: currentMission.declaredAt,
+  deadline_at: currentMission.deadlineAt,
+} : undefined);
+const missionHistory = profile?.missions ?? [];
+const confirmedMissions = missionHistory.filter((mission) => mission.status === "CONFIRMED");
+const airlockedMissions = missionHistory.filter((mission) => mission.status === "AIRLOCKED");
+const activeMissionForDisplay = missionForDisplay && (missionForDisplay.status === "DECLARED" || missionForDisplay.status === "PROOF_PENDING")
+  ? missionForDisplay
+  : undefined;
+const latestConfirmedMission = confirmedMissions[0];
+const latestAirlockMission = airlockedMissions[0];
+const profileName = profile?.displayName ?? "Oskar Freye";
+const profileHandle = profile?.handle ?? "oskar";
+const ownerCanDeclare = await loadOwnerCanDeclare(profileHandle);
+const headerSeatMeta = current
+  ? `${liveSeatLabel(current)} · BOARDED ${formatMaybeDate(current.boarded_at)} · FOUNDER`
+  : latestVacatedSeat
+    ? `${liveSeatLabel(latestVacatedSeat)} · VACATED ${formatMaybeDate(latestVacatedSeat.vacated_at)} · FOUNDER`
+    : `${staticSeatLabel(1)} · BOARDED ${formatDate(currentMission.declaredAt)} · FOUNDER`;
+const nextSeatPrice = profile?.totalPaid ?? "$42";
+
+async function loadProfile(url: URL, handle: string): Promise<ProfileState | null> {
+  if (!handle) return null;
+  try {
+    const response = await fetch(new URL("/api/state", url), {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    const state = (await response.json()) as StateSnapshot;
+    const allSeats = [...(state.active_seats ?? []), ...(state.vacated_seats ?? [])];
+    const seats = allSeats
+      .filter((seat) => seat.occupant?.handle.toLowerCase() === handle)
+      .sort(compareSeatsByBoardedAt);
+    if (seats.length === 0) return null;
+    const currentSeat = seats.find((seat) => seat.status === "OCCUPIED");
+    const occupant = (currentSeat ?? seats[seats.length - 1]).occupant;
+    const missions = (state.mission_history ?? [])
+      .filter((mission) => mission.handle.toLowerCase() === handle);
+    return {
+      handle: occupant?.handle ?? handle,
+      displayName: occupant?.display_name ?? occupant?.handle ?? handle,
+      currentSeat,
+      seats,
+      missions,
+      missionsDeclared: missions.length,
+      missionsConfirmed: missions.filter((mission) => mission.status === "CONFIRMED").length,
+      missionsAirlocked: missions.filter((mission) => mission.status === "AIRLOCKED").length,
+      longestConfirmedStreak: longestConfirmedStreak(missions),
+      timeOnBoatDays: timeOnBoatDays(seats),
+      totalPaid: totalPaidDisplay(seats) ?? state.next_seat?.price?.display ?? "$42",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadOwnerCanDeclare(profileHandle: string): Promise<boolean> {
+  const token = await clerkSessionToken(Astro);
+  const rawBase = import.meta.env.PUBLIC_API_URL;
+  if (!token || typeof rawBase !== "string" || rawBase.trim() === "") return false;
+  try {
+    const response = await fetch(new URL("/api/me/airlock", rawBase), {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) return false;
+    const dashboard = (await response.json()) as DashboardOwnerState;
+    return Boolean(dashboard.can_declare && dashboard.profile?.handle?.toLowerCase() === profileHandle.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function compareSeatsByBoardedAt(a: StateSeat, b: StateSeat): number {
+  return (a.boarded_at ?? "").localeCompare(b.boarded_at ?? "") || a.seat_number - b.seat_number;
+}
+
+function compareOptionalIsoDesc(a?: string, b?: string): number {
+  return (b ?? "").localeCompare(a ?? "");
+}
+
+function priceDisplayToCents(display?: string): number {
+  if (!display) return 0;
+  const parsed = Number(display.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
+}
+
+function totalPaidDisplay(seats: StateSeat[]): string | null {
+  const amounts = seats
+    .map((seat) => priceDisplayToCents(seat.price_paid?.display))
+    .filter((amount) => amount > 0);
+  if (amounts.length === 0) return null;
+  const total = amounts.reduce((sum, amount) => sum + amount, 0);
+  if (amounts.length === 1) return dollars(total);
+  return `${amounts.map(dollars).join(" + ")} = ${dollars(total)}`;
+}
+
+function dollars(cents: number): string {
+  const value = cents / 100;
+  return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
+}
+
+function longestConfirmedStreak(missions: StateMissionHistoryEntry[]): number {
+  let current = 0;
+  let longest = 0;
+  for (const mission of [...missions].sort((a, b) => a.declared_at.localeCompare(b.declared_at))) {
+    if (mission.status === "CONFIRMED") {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else if (mission.status === "AIRLOCKED") {
+      current = 0;
+    }
+  }
+  return longest;
+}
+
+function timeOnBoatDays(seats: StateSeat[]): number {
+  const totalMs = seats.reduce((sum, seat) => {
+    if (!seat.boarded_at) return sum;
+    const start = new Date(seat.boarded_at).getTime();
+    if (Number.isNaN(start)) return sum;
+    const end = seat.status === "VACATED" && seat.vacated_at
+      ? new Date(seat.vacated_at).getTime()
+      : Date.now();
+    if (Number.isNaN(end) || end <= start) return sum;
+    return sum + end - start;
+  }, 0);
+  return Math.floor(totalMs / (24 * 60 * 60 * 1000));
+}
+
+function liveSeatLabel(seat: StateSeat): string {
+  return seat.cohort === "THE_100"
+    ? `THE 100 · SEAT ${seat.seat_label}`
+    : `SEAT ${seat.seat_label}`;
+}
+
+function formatMaybeDate(iso?: string): string {
+  return iso ? formatDate(iso) : "UNKNOWN";
+}
+
+function hatchIn(deadline?: string): string {
+  if (!deadline) return "UNKNOWN";
+  const target = new Date(deadline).getTime();
+  const remaining = target - Date.now();
+  if (!Number.isFinite(target)) return "UNKNOWN";
+  if (remaining <= 0) return "HATCH CLOSED";
+  const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  return `${days}d ${hours}h`;
+}
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{profile || isOskarFallback ? `@${profileHandle}` : "Crew"} · The Airlock</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="page-shell" data-handle={profileHandle}>
+    <nav class="page-nav mono">
+      <a href="/">THE AIRLOCK</a>
+      <a href="/airlock">THE WAKE</a>
+      <a href="/manifest">SIGN THE MANIFEST</a>
+    </nav>
+
+    {
+      profile || isOskarFallback ? (
+        <>
+          <header class="profile-header">
+            <img
+              class="suit-avatar profile-avatar"
+              src={current?.occupant?.avatar_url || "/astronaut-default.svg"}
+              alt={`${profileHandle} in their astronaut suit`}
+              width="96"
+              height="96"
+            />
+            <div>
+              <h1>@{profileHandle} <span>{profileName}</span></h1>
+              <p>{headerSeatMeta}</p>
+              {latestVacatedSeat ? (
+                <div class="profile-history mono">
+                  <span>PREVIOUSLY {liveSeatLabel(latestVacatedSeat)} · VACATED {formatMaybeDate(latestVacatedSeat.vacated_at)}</span>
+                  {current ? <a href={`/c/${profileHandle}`}>RE-BOARDED AS SEAT {current.seat_label} →</a> : null}
+                </div>
+              ) : null}
+            </div>
+            <a class="btn btn-ghost" href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Watching @${profileHandle} ship in public.`)}`}>SHARE PROFILE <span class="arrow">→</span></a>
+          </header>
+
+          <section class="profile-grid">
+            <div class="panel profile-card profile-card--wide">
+              <div class="corners"><i></i><i></i></div>
+              <div class="panel-head">
+                <span>{current || isOskarFallback ? "CURRENT MISSION" : latestAirlockMission ? "AIRLOCK EVENT" : "CURRENT MISSION"}</span>
+                <span>{activeMissionForDisplay ? <StatusBadge status={activeMissionForDisplay.status} /> : latestAirlockMission && !current ? <StatusBadge status="AIRLOCKED" /> : current ? "SEAT HELD" : "NO MISSION"}</span>
+              </div>
+              <div class="profile-card-body">
+                {current || isOskarFallback ? (
+                  activeMissionForDisplay ? (
+                    <>
+                      <h2>"{activeMissionForDisplay.declaration}"</h2>
+                      <StatusBadge status={activeMissionForDisplay.status} />
+                      <p class="mono">HATCH IN {hatchIn(activeMissionForDisplay.deadline_at)} · STATUS: {activeMissionForDisplay.status.replace("_", " ")}</p>
+                      <p>DECLARED {formatUtc(activeMissionForDisplay.declared_at)} · DEADLINE {formatUtc(activeMissionForDisplay.deadline_at)} UTC</p>
+                      {activeMissionForDisplay.declaration_url ? <p>MISSION URL <a href={activeMissionForDisplay.declaration_url}>{activeMissionForDisplay.declaration_url}</a></p> : null}
+                      {activeMissionForDisplay.proof_url ? <p>PROOF <a href={activeMissionForDisplay.proof_url}>{activeMissionForDisplay.proof_url}</a></p> : null}
+                    </>
+                  ) : (
+                    <>
+                      <h2>SEAT HELD · NO ACTIVE MISSION</h2>
+                      {latestConfirmedMission ? (
+                        <p>LAST SHIPPED {formatMaybeDate(latestConfirmedMission.confirmed_at)} · "{latestConfirmedMission.declaration}"</p>
+                      ) : (
+                        <p>THE HATCH CLOCK STARTS WHEN THE MISSION IS DECLARED.</p>
+                      )}
+                      {ownerCanDeclare ? <a class="btn btn-primary" href="/dashboard">DECLARE NEW MISSION <span class="arrow">→</span></a> : null}
+                    </>
+                  )
+                ) : latestAirlockMission ? (
+                  <>
+                    <h2>SEAT VACATED · {formatMaybeDate(latestVacatedSeat?.vacated_at ?? latestAirlockMission.airlocked_at)}</h2>
+                    <StatusBadge status="AIRLOCKED" />
+                    <p>DIED ON "{latestAirlockMission.declaration}" · SEAT {latestAirlockMission.seat_label}</p>
+                    {latestVacatedSeat?.reboarded_as_seat_label ? (
+                      <p><a href={`/c/${profileHandle}`}>RE-BOARDED AS SEAT {latestVacatedSeat.reboarded_as_seat_label} →</a></p>
+                    ) : (
+                      <p>THIS PROFILE IS A MEMORIAL. NOBODY ELSE GETS SEAT {latestVacatedSeat?.seat_label ?? latestAirlockMission.seat_label}.</p>
+                    )}
+                  </>
+                ) : (
+                  <p>THE HATCH CLOCK STARTS WHEN THE MISSION IS DECLARED.</p>
+                )}
+              </div>
+            </div>
+
+            <div class="panel profile-card">
+              <div class="corners"><i></i><i></i></div>
+              <div class="panel-head"><span>LIFETIME STATS</span></div>
+              <dl class="stat-list">
+                <div><dt>MISSIONS DECLARED</dt><dd>{profile?.missionsDeclared ?? 1}</dd></div>
+                <div><dt>MISSIONS CONFIRMED</dt><dd>{profile?.missionsConfirmed ?? metrics.confirmedLifetime}</dd></div>
+                <div><dt>MISSIONS AIRLOCKED</dt><dd>{profile?.missionsAirlocked ?? 0}</dd></div>
+                <div><dt>LONGEST STREAK</dt><dd>{profile?.longestConfirmedStreak ?? 0} missions</dd></div>
+                <div><dt>TIME ON THE BOAT</dt><dd>{profile ? `${profile.timeOnBoatDays} days` : "0 days"}</dd></div>
+                <div><dt>SEATS HELD</dt><dd>{historySeats.length || 1}</dd></div>
+                <div><dt>TOTAL PAID</dt><dd>{nextSeatPrice}</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          {profile && historySeats.length > 1 ? (
+            <section class="profile-section">
+              <div class="section-head">
+                <div>
+                  <div class="label"><span class="n">SEATS</span> HISTORY</div>
+                  <h2>Seat numbers do not reset.</h2>
+                </div>
+              </div>
+              <div class="seat-history-list">
+                {historySeats.map((seat) => (
+                  <p class="muted-line">
+                    {liveSeatLabel(seat)} · {seat.status}{seat.boarded_at ? ` · BOARDED ${formatDate(seat.boarded_at)}` : ""}{seat.vacated_at ? ` · VACATED ${formatDate(seat.vacated_at)}` : ""}
+                    {seat.reboarded_as_seat_label ? (
+                      <> · <a href={`/c/${profileHandle}`}>RE-BOARDED AS SEAT {seat.reboarded_as_seat_label}</a></>
+                    ) : null}
+                  </p>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section class="profile-section">
+            <div class="section-head">
+              <div>
+                <div class="label"><span class="n">LOG</span> LAUNCH WALL</div>
+                <h2>{confirmedMissions.length > 0 ? "Confirmed launches." : "No confirmed launches yet."}</h2>
+              </div>
+            </div>
+            {confirmedMissions.length > 0 ? (
+              confirmedMissions.map((mission) => (
+                <p class="muted-line">[ thumbnail ] CONFIRMED · "{mission.declaration}" · SEAT {mission.seat_label}{mission.confirmed_at ? ` · ${formatDate(mission.confirmed_at)}` : ""}{mission.declaration_url ? ` · DECLARED ${mission.declaration_url}` : ""}{mission.proof_url ? ` · PROOF ${mission.proof_url}` : ""} · PAID RELEASE VERIFIED</p>
+              ))
+            ) : (
+              <p class="muted-line">Proof has to be submitted explicitly before the hatch closes. Declaration is not proof.</p>
+            )}
+          </section>
+
+          {current?.stack ? (
+            <section class="profile-section">
+              <div class="section-head">
+                <div>
+                  <div class="label"><span class="n">STACKS</span> ACTIVE PRESSURE</div>
+                  <h2>Extra rope is armed.</h2>
+                </div>
+              </div>
+              {current.stack.crew_alert_enabled ? (
+                <p class="muted-line">CREW ALERT · {current.stack.crew_alert_contact_count} contacts named</p>
+              ) : null}
+              {current.stack.the_wake_enabled ? (
+                <p class="muted-line">THE WAKE · preset miss post enabled</p>
+              ) : null}
+              {current.stack.reentry_challenge_enabled ? (
+                <p class="muted-line">RE-ENTRY CHALLENGE · two confirmed missions redeems prior stamps</p>
+              ) : null}
+            </section>
+          ) : null}
+
+          <section class="profile-section">
+            <div class="section-head">
+              <div>
+                <div class="label"><span class="n">STAMP</span> AIRLOCK LOG</div>
+                <h2>{airlockedMissions.length > 0 ? "AIRLOCK EVENTS RECORDED" : "NO AIRLOCK EVENTS · clean log"}</h2>
+              </div>
+            </div>
+            {airlockedMissions.map((mission) => (
+              <p class="muted-line">AIRLOCKED · "{mission.declaration}" · SEAT {mission.seat_label}{mission.airlocked_at ? ` · ${formatDate(mission.airlocked_at)}` : ""} · 30 DAYS, 0 PROOF{mission.redeemed ? " · REDEEMED" : ""}</p>
+            ))}
+          </section>
+        </>
+      ) : (
+        <section class="empty-state">
+          <div class="label"><span class="n">404</span> CREW PROFILE</div>
+          <h1>No boarder under @{handle || "unknown"}.</h1>
+          <p>Seat 01 is occupied. Seats 02 through 100 are open.</p>
+          <a href="/manifest" class="btn btn-primary">Sign the Manifest · $42 <span class="arrow">→</span></a>
+        </section>
+      )
+    }
+  </main>
+  <script is:inline src="/sprites.js"></script>
+  <script is:inline src="/airlock.js"></script>
+  <script is:inline src="/profile-view.js" defer></script>
+</body>
+</html>
