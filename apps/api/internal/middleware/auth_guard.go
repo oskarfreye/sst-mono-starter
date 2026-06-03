@@ -19,7 +19,7 @@ type AuthGuardOptions struct {
 	Optional bool
 }
 
-// AuthGuard verifies OpenAuth-issued JWTs via the issuer's JWKS endpoint
+// AuthGuard verifies issuer-signed JWTs via the issuer's JWKS endpoint
 // (`$AUTH_URL/.well-known/jwks.json`). Keys are cached and refreshed in the
 // background by `keyfunc`.
 type AuthGuard struct {
@@ -27,12 +27,17 @@ type AuthGuard struct {
 	issuer string
 }
 
-// User is the subject extracted from a verified access token. Fields mirror
-// the OpenAuth `subjects.ts` schema in `apps/auth/src/subjects.ts`.
+// User is the subject extracted from a verified bearer token.
 type User struct {
 	ID       string
 	Provider string
 	Contact  *Contact
+	// Plan is the active Clerk Billing plan claim (`pla`), a single
+	// `scope:planslug` string (e.g. `u:boarder`). Zero-valued for OpenAuth.
+	Plan string
+	// Features holds the Clerk Billing feature claims (`fea`), each a
+	// `scope:featureslug` entry (e.g. `u:boarding`). Zero-valued for OpenAuth.
+	Features []string
 }
 
 type Contact struct {
@@ -153,6 +158,82 @@ func GetUser(c *fiber.Ctx) (*User, bool) {
 	return user, ok
 }
 
+// WithUser attaches a verified subject to the request context. It is the
+// companion setter to GetUser, used by middleware that authenticates a request
+// before handlers run (and by tests that exercise handlers in isolation).
+func WithUser(c *fiber.Ctx, user *User) {
+	c.Locals(userContextKey{}, user)
+}
+
+// HasFeature reports whether the user holds the Clerk Billing feature `slug`.
+// Clerk feature claims are `<scope>:<slug>` (scope in {u,o}); a bare slug is
+// also accepted. Matching is done on the part after the first ':'.
+func (u *User) HasFeature(slug string) bool {
+	if u == nil {
+		return false
+	}
+	for _, entry := range u.Features {
+		if claimMatchesSlug(entry, slug) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasPlan reports whether the user's active Clerk Billing plan is `slug`.
+// The plan claim is `<scope>:<slug>` (scope in {u,o}); a bare slug is also
+// accepted. Matching is done on the part after the first ':'.
+func (u *User) HasPlan(slug string) bool {
+	if u == nil {
+		return false
+	}
+	return claimMatchesSlug(u.Plan, slug)
+}
+
+// PlanSlug returns the slug portion of the active Clerk Billing plan claim
+// (`pla`), i.e. the part after the first ':' (scope is dropped). A bare value
+// with no scope prefix is returned as-is. Empty for OpenAuth / no plan.
+func (u *User) PlanSlug() string {
+	if u == nil || u.Plan == "" {
+		return ""
+	}
+	if _, after, found := strings.Cut(u.Plan, ":"); found {
+		return after
+	}
+	return u.Plan
+}
+
+// claimMatchesSlug compares a `scope:slug` (or bare `slug`) claim entry against
+// a target slug, ignoring the scope prefix.
+func claimMatchesSlug(entry, slug string) bool {
+	if entry == "" {
+		return false
+	}
+	if _, after, found := strings.Cut(entry, ":"); found {
+		return after == slug
+	}
+	return entry == slug
+}
+
+// RequireFeature returns a fiber middleware that gates a route on a Clerk
+// Billing feature. It must be chained AFTER the auth guard so the user is
+// present in Locals. Responds 401 when no user is attached, 402 when the user
+// lacks the feature, and otherwise calls c.Next().
+func RequireFeature(slug string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		user, ok := GetUser(c)
+		if !ok || user == nil {
+			return unauth(c, "Unauthorized")
+		}
+		if !user.HasFeature(slug) {
+			return c.Status(fiber.StatusPaymentRequired).JSON(fiber.Map{
+				"error": "boarding requires an active plan",
+			})
+		}
+		return c.Next()
+	}
+}
+
 func (ag *AuthGuard) verify(tokenStr string) (*User, error) {
 	parsed, err := jwt.Parse(
 		tokenStr,
@@ -174,12 +255,20 @@ func (ag *AuthGuard) verify(tokenStr string) (*User, error) {
 		return nil, jwt.ErrTokenInvalidClaims
 	}
 
-	// OpenAuth tags tokens with `type` ("access" vs "refresh"). Refresh tokens
-	// must never be accepted as bearer credentials.
-	if asString(claims["type"]) != "access" {
-		return nil, jwt.ErrTokenInvalidClaims
-	}
+	return userFromClaims(claims)
+}
 
+func userFromClaims(claims jwt.MapClaims) (*User, error) {
+	if tokenType := asString(claims["type"]); tokenType != "" {
+		if tokenType != "access" {
+			return nil, jwt.ErrTokenInvalidClaims
+		}
+		return openAuthUserFromClaims(claims)
+	}
+	return clerkUserFromClaims(claims)
+}
+
+func openAuthUserFromClaims(claims jwt.MapClaims) (*User, error) {
 	// OpenAuth packs the subject under `properties` (the value you returned
 	// from the issuer's `success` handler).
 	props, _ := claims["properties"].(map[string]any)
@@ -197,12 +286,62 @@ func (ag *AuthGuard) verify(tokenStr string) (*User, error) {
 			Tel:   asString(contact["tel"]),
 		}
 	}
+	if user.ID == "" {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
 	return user, nil
+}
+
+func clerkUserFromClaims(claims jwt.MapClaims) (*User, error) {
+	user := &User{
+		ID:       asString(claims["sub"]),
+		Provider: "clerk",
+	}
+	if user.ID == "" {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
+
+	email := firstString(claims["email"], claims["primary_email_address"], claims["email_address"])
+	tel := firstString(claims["phone_number"], claims["phone"])
+	if email != "" || tel != "" {
+		user.Contact = &Contact{Email: email, Tel: tel}
+	}
+
+	// Clerk Billing claims: `pla` is a single `scope:planslug` string; `fea`
+	// is a single comma-separated `scope:featureslug` list.
+	user.Plan = asString(claims["pla"])
+	user.Features = parseClerkList(asString(claims["fea"]))
+
+	return user, nil
+}
+
+// parseClerkList splits a Clerk comma-separated claim into trimmed, non-empty
+// entries. Returns nil when no entries remain.
+func parseClerkList(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if entry := strings.TrimSpace(part); entry != "" {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 func asString(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+func firstString(values ...any) string {
+	for _, value := range values {
+		if s := asString(value); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 func unauth(c *fiber.Ctx, msg string) error {
