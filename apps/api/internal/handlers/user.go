@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"github.com/theairlock/airlock/apps/api/internal/middleware"
 	"github.com/gofiber/fiber/v2"
+	"github.com/theairlock/airlock/apps/api/internal/middleware"
 )
 
 func GetMe(c *fiber.Ctx) error {

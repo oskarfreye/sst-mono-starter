@@ -6,7 +6,7 @@ Go / Fiber Lambda API. Mirrors the `api-v2` pattern from `fr3n-mono`.
 
 ```
 apps/api/
-├── main.go                     # Lambda entry (API Gateway v2 → Fiber)
+├── main.go                     # Lambda Function URL entry (streaming SSE + Fiber)
 ├── go.mod
 ├── Makefile
 ├── package.json                # bun workspace stub
@@ -28,4 +28,8 @@ make fmt
 ## Deploy
 
 Built as part of `sst deploy` — SST calls `go build -o bootstrap` for you.
-The router in `infra/api.ts` mounts this function on `/v2`.
+The router in `infra/api.ts` mounts this function on `/api`.
+
+Set `CLERK_ISSUER_URL` to the Clerk issuer / frontend API URL and
+`LAUNCH_USER_ID` to Oskar's Clerk user ID before production deploys so
+the first Dynamo-backed read persists the launch seed as real records.

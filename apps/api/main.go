@@ -1,30 +1,38 @@
 package main
 
 import (
-	"context"
 	"log"
+	"net/http"
 
-	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
-	fiberadapter "github.com/awslabs/aws-lambda-go-api-proxy/fiber"
+	"github.com/aws/aws-lambda-go/lambdaurl"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/theairlock/airlock/apps/api/internal/app"
 	"github.com/theairlock/airlock/apps/api/internal/config"
+	"github.com/theairlock/airlock/apps/api/internal/handlers"
 )
 
-var fiberLambda *fiberadapter.FiberLambda
+var httpHandler http.Handler
 
 func init() {
 	cfg := config.Load()
 	fiberApp := app.New(cfg)
-	fiberLambda = fiberadapter.New(fiberApp)
-	log.Println("API initialized for AWS Lambda")
+	stateHandler := handlers.NewStateHandler(handlers.StateHandlerConfig{
+		TableName:    cfg.TableName,
+		AWSRegion:    cfg.AWSRegion,
+		LaunchUserID: cfg.LaunchUserID,
+	})
+	fiberHandler := adaptor.FiberApp(fiberApp)
+	httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/events", "/v2/events", "/events":
+			stateHandler.StreamEventsHTTP(w, r)
+		default:
+			fiberHandler.ServeHTTP(w, r)
+		}
+	})
+	log.Println("API initialized for AWS Lambda Function URL")
 }
 
 func main() {
-	lambda.Start(Handler)
-}
-
-// Handler proxies API Gateway v2 (HTTP API) events into Fiber.
-func Handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	return fiberLambda.ProxyWithContextV2(ctx, req)
+	lambdaurl.Start(httpHandler, lambdaurl.WithDetectContentType(false))
 }
