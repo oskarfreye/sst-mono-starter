@@ -14,8 +14,9 @@
     "astro": "astro"
   },
   "dependencies": {
+    "@clerk/astro": "^3.3.1",
     "@theairlock/core": "workspace:*",
-    "astro": "^6.3.8",
+    "astro": "^5.18.2",
     "astro-sst": "^3.1.4"
   },
   "devDependencies": {
