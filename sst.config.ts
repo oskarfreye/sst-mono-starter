@@ -3,7 +3,7 @@
 
 // Stages we never want to accidentally tear down. Extend this list if you add
 // long-lived stages (e.g. "preview", "demo"). Keep in sync with the matching
-// const in infra/env.ts and infra/database.ts / infra/auth.ts.
+// const in infra/env.ts and infra/database.ts.
 const protectedStages = ["production", "stage"];
 
 export default $config({
@@ -27,8 +27,8 @@ export default $config({
   async run() {
     const storage = await import("./infra/storage");
     const db = await import("./infra/database");
-    const authStack = await import("./infra/auth");
     const api = await import("./infra/api");
+    await import("./infra/hatch");
     const frontend = await import("./infra/frontend");
 
     return {
@@ -36,7 +36,6 @@ export default $config({
       Region: $app.providers?.aws.region,
       Table: db.table.name,
       PublicAssetsBucket: storage.publicAssetsBucket.name,
-      AuthUrl: authStack.auth.url,
       ApiUrl: api.api.url,
       WebUrl: frontend.web.url,
     };

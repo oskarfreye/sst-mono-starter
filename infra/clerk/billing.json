@@ -1,0 +1,55 @@
+{
+  "billing": {
+    "user_enabled": true,
+    "features": {
+      "boarding": {
+        "name": "Boarding seat",
+        "description": "Claim the next manifest seat and unlock the 30-day hatch flow.",
+        "include_in_jwt": true,
+        "publicly_visible": true
+      }
+    },
+    "plans": {
+      "tier-01": {
+        "name": "Boarding Pass - Tier 01",
+        "description": "Board seats 01-10 of THE 100.",
+        "amount": 4200,
+        "currency": "usd",
+        "payer_type": "user",
+        "is_recurring": false,
+        "publicly_visible": true,
+        "features": ["boarding"]
+      },
+      "tier-02": {
+        "name": "Boarding Pass - Tier 02",
+        "description": "Board seats 11-25 of THE 100.",
+        "amount": 8400,
+        "currency": "usd",
+        "payer_type": "user",
+        "is_recurring": false,
+        "publicly_visible": true,
+        "features": ["boarding"]
+      },
+      "tier-03": {
+        "name": "Boarding Pass - Tier 03",
+        "description": "Board seats 26-50 of THE 100.",
+        "amount": 16800,
+        "currency": "usd",
+        "payer_type": "user",
+        "is_recurring": false,
+        "publicly_visible": true,
+        "features": ["boarding"]
+      },
+      "tier-04": {
+        "name": "Boarding Pass - Tier 04",
+        "description": "Board seats 51-100 of THE 100, and every post-100 seat at the flat price.",
+        "amount": 33600,
+        "currency": "usd",
+        "payer_type": "user",
+        "is_recurring": false,
+        "publicly_visible": true,
+        "features": ["boarding"]
+      }
+    }
+  }
+}
