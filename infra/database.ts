@@ -33,6 +33,21 @@ export const table = new sst.aws.Dynamo("electro", {
   deletionProtection: isProtectedStage,
 });
 
+// Aurora DSQL — the SQL alternative to the Dynamo table above. Postgres
+// wire-compatible, serverless, IAM-authenticated (no static password). The
+// `@starter/database/sql` Drizzle client connects to this; `Resource.Sql.*`
+// (endpoint/region) is available on any function linked to `dsql`.
+//
+// Both backends are provisioned so the starter works either way — delete the
+// one you don't use. DSQL has a generous free tier (100k DPUs + 1 GB/month).
+//
+// Hardening: `backup` enables AWS Backup (daily, 7-day retention) on protected
+// stages. DSQL has no `deletionProtection` flag today; the `protect`/`retain`
+// settings in sst.config.ts are what guard it against `sst remove` there.
+export const dsql = new sst.aws.Dsql("Sql", {
+  backup: isProtectedStage,
+});
+
 // Rate-limit table is ephemeral (TTL'd counters) — skip PITR to save cost,
 // but still protect against accidental delete on production/stage.
 export const rateLimitTable = new sst.aws.Dynamo("rateLimit", {

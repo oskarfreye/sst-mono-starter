@@ -35,6 +35,7 @@ export default $config({
       AppStage: $app.stage,
       Region: $app.providers?.aws.region,
       Table: db.table.name,
+      DsqlEndpoint: db.dsql.endpoint,
       PublicAssetsBucket: storage.publicAssetsBucket.name,
       AuthUrl: authStack.auth.url,
       ApiUrl: api.api.url,

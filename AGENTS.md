@@ -8,7 +8,9 @@ SST mono-repo starter. Bun workspaces.
 - `apps/auth` — OpenAuth issuer Lambda
 - `apps/web` — Nuxt 3
 - `packages/core` — shared TS utils
-- `packages/database` — DynamoDB / ElectroDB client
+- `packages/database` — pick your backend, both provisioned in `infra/database.ts`:
+  - `@starter/database/dynamo` — DynamoDB single-table via ElectroDB
+  - `@starter/database/sql` — Aurora DSQL (Postgres) via Drizzle ORM, IAM-authed
 - `infra/` — modular SST stacks, imported by `sst.config.ts`
 
 ## Commands

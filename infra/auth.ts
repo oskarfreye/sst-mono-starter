@@ -1,3 +1,4 @@
+import { dsql } from "./database";
 import { AUTH_DOMAIN, HAS_CUSTOM_DOMAIN } from "./env";
 
 // Dedicated table for OpenAuth storage (sessions, codes, refresh tokens).
@@ -38,9 +39,14 @@ export const authTable = new sst.aws.Dynamo("AuthTable", {
 export const auth = new sst.aws.Auth("Auth", {
   issuer: {
     handler: "apps/auth/src/index.handler",
-    link: [authTable],
+    // `dsql` linked so the issuer can persist users via the Drizzle client in
+    // `@starter/database/sql` (the package apps/auth already depends on). Drop
+    // it if you keep auth on the Dynamo backend.
+    link: [authTable, dsql],
     environment: {
       STAGE: $app.stage,
+      DSQL_ENDPOINT: dsql.endpoint,
+      DSQL_REGION: dsql.region,
       // Gates the dev-mode OTP logger in apps/auth/src/index.ts. Must never
       // be "1" on shared stages — `$dev` is only true under `sst dev`.
       AUTH_DEV_LOG_CODES: $dev ? "1" : "0",

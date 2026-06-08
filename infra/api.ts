@@ -1,5 +1,5 @@
 import { auth } from "./auth";
-import { table, rateLimitTable } from "./database";
+import { table, rateLimitTable, dsql } from "./database";
 import { publicAssetsBucket, privateAssetsBucket } from "./storage";
 // import { EXAMPLE_API_KEY } from "./secrets"; // L-Inf2: re-enable when wired
 import { API_DOMAIN, HAS_CUSTOM_DOMAIN } from "./env";
@@ -60,6 +60,11 @@ export const api = new sst.aws.Function("Api", {
   link: [
     table,
     rateLimitTable,
+    // Both DB backends are linked so you can pick either without touching
+    // infra. `dsql` grants `dsql:DbConnectAdmin` on the cluster. The Go
+    // handler can connect with pgx + an IAM auth token from the aws-sdk-go-v2
+    // `dsql` auth-token package; the TS lambdas use `@starter/database/sql`.
+    dsql,
     sst.aws.permission({
       actions: ["s3:PutObject", "s3:GetObject"],
       resources: [
@@ -83,6 +88,10 @@ export const api = new sst.aws.Function("Api", {
     AUTH_URL: auth.url,
     ELECTRO_TABLE_NAME: table.name,
     RATE_LIMIT_TABLE_NAME: rateLimitTable.name,
+    // DSQL connection target for the SQL backend. The `@starter/database/sql`
+    // client also reads these (or `Resource.Sql` via the link above).
+    DSQL_ENDPOINT: dsql.endpoint,
+    DSQL_REGION: dsql.region,
     PUBLIC_ASSETS_BUCKET: publicAssetsBucket.name,
     PRIVATE_ASSETS_BUCKET: privateAssetsBucket.name,
     // Comma-separated list of origins the API's CORS middleware trusts.
