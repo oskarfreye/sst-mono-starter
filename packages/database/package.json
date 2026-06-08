@@ -16,7 +16,7 @@
     "@aws-sdk/client-dynamodb": "^3.1023.0",
     "@aws-sdk/dsql-signer": "^3.1023.0",
     "@aws-sdk/lib-dynamodb": "^3.1023.0",
-    "drizzle-orm": "^0.38.0",
+    "drizzle-orm": "^0.45.2",
     "electrodb": "^3.4.4",
     "postgres": "^3.4.5"
   },
