@@ -31,5 +31,7 @@
   "engines": {
     "bun": ">=1.1.0"
   },
-  "packageManager": "bun@1.1.38"
+  "packageManager": "bun@1.1.38",
+  "author": "Oskar Freye",
+  "license": "UNLICENSED"
 }
